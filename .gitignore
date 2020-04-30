@@ -1,0 +1,6 @@
+Makefile
+sf-compiler
+sf-compiler-tests
+.vscode
+obj
+.tmp.s

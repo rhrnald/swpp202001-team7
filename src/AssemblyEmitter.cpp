@@ -334,7 +334,7 @@ public:
     auto [Op1, unused_1] = getOperand(II.getOperand(0));
     auto [Op2, unused_2] = getOperand(II.getOperand(1));
     string DestReg = getRegisterNameFromInstruction(&II, true); // i1 -> i64
-    string pred = ICmpInst::getPredicateName(II.getPredicate());
+    string pred = ICmpInst::getPredicateName(II.getPredicate()).str();
     auto *OpTy = II.getOperand(0)->getType();
     string sz = std::to_string(
       OpTy->isPointerTy() ? 64 : OpTy->getIntegerBitWidth());

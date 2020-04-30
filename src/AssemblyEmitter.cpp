@@ -54,7 +54,7 @@ void checkRegisterType(Instruction *I) {
   raiseErrorIf(!isa<IntegerType>(T) && !isa<PointerType>(T),
                 "unknown register type", I);
 
-  string name = I->getName();
+  string name = I->getName().str();
   unsigned bw = T->isIntegerTy() ? T->getIntegerBitWidth() : 64;
 
   if (ends_with(name, "after_trunc__") || ends_with(name, "before_zext__")) {
@@ -251,7 +251,7 @@ public:
 
   void visitBasicBlock(BasicBlock &BB) {
     raiseErrorIf(!BB.hasName(), "This basic block does not have name: ", &BB);
-    emitBasicBlockStart(BB.getName());
+    emitBasicBlockStart(BB.getName().str());
   }
 
   // Unsupported instruction goes here.

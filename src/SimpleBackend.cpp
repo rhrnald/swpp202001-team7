@@ -402,10 +402,10 @@ public:
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
     auto *Op = translateSrcOperandToTgt(SI.getOperand(0), 1);
     auto *AndVal =
-      Builder->CreateAnd(Op, (1llu << (bw - 1)), assemblyRegisterName(1));
+      Builder->CreateAnd(Op, (1llu << (bw - 1)), assemblyRegisterName(2));
     auto *NegVal =
       Builder->CreateSub(ConstantInt::get(I64Ty, 0), AndVal,
-                         assemblyRegisterName(1));
+                         assemblyRegisterName(2));
     auto *ResVal =
       Builder->CreateOr(NegVal, Op, assemblyRegisterName(1));
     emitStoreToSrcRegister(ResVal, &SI);

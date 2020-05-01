@@ -16,7 +16,7 @@ Relevant links:
 Bug fixes:
 
 - Apr. 30: Compilation error fix
-- May. 1: Copy should emit bitwidth
+- May. 1: Copy should emit bitwidth, SExt should correctly emit mask
 
 ## How to compile
 

@@ -13,6 +13,11 @@ Relevant links:
 [here](https://stackoverflow.com/questions/5120038/is-it-possible-to-cherry-pick-a-commit-from-another-git-repository).
 
 
+Bug fixes:
+
+- Apr. 30: Compilation error fix
+- May. 1: Copy should emit bitwidth
+
 ## How to compile
 
 To compile this project, you'll need to clone & build LLVM 10.0 first.

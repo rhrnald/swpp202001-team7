@@ -187,7 +187,7 @@ private:
 
   void emitCopy(const string &DestReg, const string &val) {
     if (DestReg != val)
-      emitAssembly(DestReg, "mul", {val, "1"});
+      emitAssembly(DestReg, "mul", {val, "1", "64"});
   }
 
   void emitBasicBlockStart(const string &name) {

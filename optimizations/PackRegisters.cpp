@@ -13,8 +13,21 @@ namespace {
 class PackRegisters : public PassInfoMixin<PackRegisters> {
     
 public:
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
-    DominatorTree &DT = FAM.getResult<DominatorTreeAnalysis>(F);
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
+    FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
+    
+    // This below debug codes should be deleted.
+    outs() << "(PackRegisters) Module Name: " << M.getName() << "\n";
+
+    for (Function &F : M) {
+      outs() << F.getName() << "\n";
+      if (F.isDeclaration()) {
+        outs() << "  (declaration)\n";
+      }
+      for (BasicBlock &BB : F) {
+        outs() << "  " << BB.getName() << "\n";
+      }
+    }
 
     return PreservedAnalyses::all();
   }

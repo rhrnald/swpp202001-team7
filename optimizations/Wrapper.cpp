@@ -17,17 +17,15 @@ llvmGetPassPluginInfo() {
     LLVM_PLUGIN_API_VERSION, "Team7 Optimizations", "v0.1",
     [](PassBuilder &PB) {
       PB.registerPipelineParsingCallback(
-        [](StringRef Name, FunctionPassManager &FPM,
+        [](StringRef Name, ModulePassManager &PM,
            ArrayRef<PassBuilder::PipelineElement>) {
           if (Name == "pack-regs-arg") {
-            FPM.addPass(PackRegisters());
-            return true;
+            PM.addPass(PackRegisters());
           }
           if (Name == "weird-arith") {
-            FPM.addPass(WeirdArithmetic());
-            return true;
+            PM.addPass(WeirdArithmetic());
           }
-          return false;
+          return true;
         }
       );
     }

@@ -9,7 +9,7 @@ else
 fi
 
 OPTLIB="./libTeam7"$EXT
-PASSES="instcombine,pack-regs-arg,weird-arith"
+PASSES=instcombine,pack-regs-arg,weird-arith
 TESTDIR="testcases"
 TESTOUTPUT="outputs"
 
@@ -55,7 +55,9 @@ if [[ "$1" == "run" || "$1" == "all" ]]; then
   echo "----- run -----"
   set +e
 
-  mkdir $TESTOUTPUT
+  if [[ ! -e $TESTOUTPUT ]]; then
+    mkdir $TESTOUTPUT
+  fi
 
   for f in `ls -1 $TESTDIR` ; do
     echo "== optimizing $TESTDIR/${f} =="

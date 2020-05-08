@@ -90,7 +90,6 @@ int main(int argc, char **argv) {
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
   // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
-  // TODO: InstRenamer needed!!
   MPM.addPass(SimpleBackend(optOutput, optPrintDepromotedModule));
 
   // Run!

@@ -1,5 +1,3 @@
-#include "WeirdArithmetic.h"
-
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/BasicBlock.h"
@@ -9,13 +7,33 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
+using namespace llvm::PatternMatch;
+using namespace std;
 
+namespace {
+class WeirdArithmetic : public PassInfoMixin<WeirdArithmetic> {
+    
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
+    
+    vector< pair<Instruction *, Instruction *> > Worklist;
+    for (auto &F : M) for (auto &BB : F) {
+      for (auto &I : BB) {
+        Value *X;
+        ConstantInt *C;
+        // add x, x => mul x, 2
+        if (match(&I, m_Add(m_Value(X), m_Deferred(X)))) {
+          auto NewI = BinaryOperator::CreateMul(
+                          X, ConstantInt::get(I.getType(), 2));
+          Worklist.push_back(make_pair(&I, NewI));
+        }
+      }
+    }
 
-  PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
-    FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
-
-    // This below debug codes should be deleted.
-    outs() << "(WeirdArithmetic) Module Name: " << M.getName() << "\n";
-
+    for (auto RP : Worklist)
+      ReplaceInstWithInst(RP.first, RP.second);
+    
     return PreservedAnalyses::all();
   }
+};
+}

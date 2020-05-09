@@ -33,6 +33,18 @@ public:
                           X, ConstantInt::getSigned(I.getType(), -1));
           Worklist.push_back(make_pair(&I, NewI));
         }
+        // c_and x, 2^n-1 => urem x, 2^n
+        else if (match(&I, m_c_And(m_Value(X), m_ConstantInt(C)))) {
+          uint64_t N = C->getZExtValue();
+          // if (N+1) is a power of 2
+          // - (N+1) is never zero, since instcombine pass removes
+          //   [and x, -1] since it is redundant.
+          if ((N & (N+1)) == 0) {
+            auto NewI = BinaryOperator::CreateURem(
+                          X, ConstantInt::get(I.getType(), N+1));
+            Worklist.push_back(make_pair(&I, NewI));
+          }
+        }
       }
     }
 

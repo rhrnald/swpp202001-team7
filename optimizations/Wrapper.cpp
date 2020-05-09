@@ -19,13 +19,16 @@ llvmGetPassPluginInfo() {
       PB.registerPipelineParsingCallback(
         [](StringRef Name, ModulePassManager &PM,
            ArrayRef<PassBuilder::PipelineElement>) {
+          outs() << "pass name = " << Name << "\n";
           if (Name == "pack-regs-arg") {
             PM.addPass(PackRegisters());
+            return true;
           }
           if (Name == "weird-arith") {
             PM.addPass(WeirdArithmetic());
+            return true;
           }
-          return true;
+          return false;
         }
       );
     }

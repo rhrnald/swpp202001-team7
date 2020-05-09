@@ -16,6 +16,7 @@ public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
 
+    /*
     // This below debug codes should be deleted.
     outs() << "(WeirdArithmetic) Module Name: " << M.getName() << "\n";
 
@@ -28,6 +29,7 @@ public:
         outs() << "  " << BB.getName() << "\n";
       }
     }
+    */
 
     return PreservedAnalyses::all();
   }

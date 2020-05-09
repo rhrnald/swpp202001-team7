@@ -27,6 +27,12 @@ public:
                           X, ConstantInt::get(I.getType(), 2));
           Worklist.push_back(make_pair(&I, NewI));
         }
+        // sub 0, x => mul x, -1
+        else if (match(&I, m_Sub(m_ZeroInt(), m_Value(X)))) {
+          auto NewI = BinaryOperator::CreateMul(
+                          X, ConstantInt::getSigned(I.getType(), -1));
+          Worklist.push_back(make_pair(&I, NewI));
+        }
       }
     }
 

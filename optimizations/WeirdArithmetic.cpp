@@ -7,70 +7,30 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
-using namespace llvm::PatternMatch;
-using namespace std;
+
 
 namespace {
 class WeirdArithmetic : public PassInfoMixin<WeirdArithmetic> {
     
 public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
+    FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
 
-    vector< pair<Instruction *, Instruction *> > Worklist;
-    for (auto &F : M) for (auto &BB : F) for (auto &I : BB) {
-      Value *X;
-      ConstantInt *C;
-      Instruction *NewI = nullptr;
-      // add x, x => mul x, 2
-      if (match(&I, m_Add(m_Value(X), m_Deferred(X)))) {
-        NewI = BinaryOperator::CreateMul(
-                        X, ConstantInt::get(I.getType(), 2));
-      }
-      // sub 0, x => mul x, -1
-      else if (match(&I, m_Sub(m_ZeroInt(), m_Value(X)))) {
-        NewI = BinaryOperator::CreateMul(
-                        X, ConstantInt::getSigned(I.getType(), -1));
-      }
-      // c_and x, 2^n-1 => urem x, 2^n
-      else if (match(&I, m_c_And(m_Value(X), m_ConstantInt(C)))) {
-        uint64_t N = C->getZExtValue();
-        // if (N+1) is a power of 2
-        // - (N+1) is never zero, since instcombine pass removes
-        //   [and x, -1] since it is redundant.
-        if ((N & (N+1)) == 0) {
-          NewI = BinaryOperator::CreateURem(
-                        X, ConstantInt::get(I.getType(), N+1));
-        }
-      }
-      // shift x, N => mul/div x, 2^N
-      else if (I.isShift() && (C = dyn_cast<ConstantInt>(I.getOperand(1)))) {
-        uint64_t N = C->getZExtValue();
-        X = I.getOperand(0);
-        switch (I.getOpcode()) {
-        // srl x, N => mul x, 2^N
-        case BinaryOperator::Shl:
-          NewI = BinaryOperator::CreateMul(
-                        X, ConstantInt::get(I.getType(), 1<<N));
-          break;
-        // ashr x, N => sdiv x, 2^N
-        case BinaryOperator::AShr:
-          NewI = BinaryOperator::CreateSDiv(
-                        X, ConstantInt::get(I.getType(), 1<<N));
-          break;
-        // lshr x, N => udiv x, 2^N
-        case BinaryOperator::LShr:
-          NewI = BinaryOperator::CreateUDiv(
-                        X, ConstantInt::get(I.getType(), 1<<N));
-          break;
-        }
-      }
+    /*
+    // This below debug codes should be deleted.
+    outs() << "(WeirdArithmetic) Module Name: " << M.getName() << "\n";
 
-      if (NewI) Worklist.push_back(make_pair(&I, NewI));
+    for (Function &F : M) {
+      outs() << F.getName() << "\n";
+      if (F.isDeclaration()) {
+        outs() << "  (declaration)\n";
+      }
+      for (BasicBlock &BB : F) {
+        outs() << "  " << BB.getName() << "\n";
+      }
     }
+    */
 
-    for (auto RP : Worklist)
-      ReplaceInstWithInst(RP.first, RP.second);
-    
     return PreservedAnalyses::all();
   }
 };

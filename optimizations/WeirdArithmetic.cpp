@@ -42,6 +42,28 @@ public:
                         X, ConstantInt::get(I.getType(), N+1));
         }
       }
+      // shift x, N => mul/div x, 2^N
+      else if (I.isShift() && (C = dyn_cast<ConstantInt>(I.getOperand(1)))) {
+        uint64_t N = C->getZExtValue();
+        X = I.getOperand(0);
+        switch (I.getOpcode()) {
+        // srl x, N => mul x, 2^N
+        case BinaryOperator::Shl:
+          NewI = BinaryOperator::CreateMul(
+                        X, ConstantInt::get(I.getType(), 1<<N));
+          break;
+        // ashr x, N => sdiv x, 2^N
+        case BinaryOperator::AShr:
+          NewI = BinaryOperator::CreateSDiv(
+                        X, ConstantInt::get(I.getType(), 1<<N));
+          break;
+        // lshr x, N => udiv x, 2^N
+        case BinaryOperator::LShr:
+          NewI = BinaryOperator::CreateUDiv(
+                        X, ConstantInt::get(I.getType(), 1<<N));
+          break;
+        }
+      }
 
       if (NewI) Worklist.push_back(make_pair(&I, NewI));
     }

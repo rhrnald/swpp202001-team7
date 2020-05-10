@@ -7,27 +7,27 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
-using namespace std;
 
-
-class ArgumentPackingInfo {
-public:
-  map<unsigned, Argument*> NotPack;
-  map<unsigned, vector<Argument*>> WillPack;
-  unsigned PackedArgCount;
-  LLVMContext *Context;
-
-  ArgumentPackingInfo(Function &F);
-  vector<Type*>& getArgTy();
-  void clear();
-};
 
 class PackRegisters : public PassInfoMixin<PackRegisters> {
-private:
-  map<Function*, ArgumentPackingInfo*> PackInfo;
-  Function* PackRegistersFromCallee(Function *F);
-  pair<Instruction*, CallInst*> PackRegistersFromCaller(CallInst *CI, Function *NewF);
-  
+    
 public:
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM); /*{
+    FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
+    
+    // This below debug codes should be deleted.
+    outs() << "(PackRegisters) Module Name: " << M.getName() << "\n";
+
+    for (Function &F : M) {
+      outs() << F.getName() << "\n";
+      if (F.isDeclaration()) {
+        outs() << "  (declaration)\n";
+      }
+      for (BasicBlock &BB : F) {
+        outs() << "  " << BB.getName() << "\n";
+      }
+    }
+
+    return PreservedAnalyses::all();
+  }*/
 };

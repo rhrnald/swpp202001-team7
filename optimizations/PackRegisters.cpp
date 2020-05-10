@@ -25,11 +25,12 @@ class ArgumentPackingInfo {
 private:
 
 public:
-  map<unsigned, Value*> NotPack;
-  map<unsigned, vector<Value*>> WillPack;
-  LLVMContext *Context;
+  map<unsigned, Argument*> NotPack;
+  map<unsigned, vector<Argument*>> WillPack;
   unsigned PackedArgCount;
 
+  LLVMContext *Context;
+  
   ArgumentPackingInfo(Function &F) {
     Context = &(F.getContext());
     if (F.arg_size() == 0) {
@@ -37,8 +38,8 @@ public:
       return;
     }
 
-    DataLayout *DL = new DataLayout(F.getParent());
-    vector<pair<unsigned, Value*>> Args;
+    unique_ptr<DataLayout> DL(new DataLayout(F.getParent()));
+    vector<pair<unsigned, Argument*>> Args;
 
     for (auto &A : F.args()) {
       Args.emplace_back(DL->getTypeSizeInBits(A.getType()), &A);
@@ -47,7 +48,8 @@ public:
     // std::reverse(Args.begin(), Args.end());
 
     unsigned ArgCount = F.arg_size();
-    unsigned PackedCount = 0, PackedSize = 0, PackedFrom = 0, PackedNow = 0;
+    unsigned PackedCount = 0, PackedSize = Args[0].first,
+             PackedFrom = 0, PackedNow = 0;
     
     while (PackedFrom < ArgCount) {
       while (PackedNow + 1 < Args.size() &&
@@ -96,26 +98,26 @@ class PackRegisters : public PassInfoMixin<PackRegisters> {
 private:
   map<Function*, ArgumentPackingInfo*> PackInfo;
 
-  void PackRegistersFromCallee(Function &F) {
-    ArgumentPackingInfo *API = PackInfo[&F];
+  Function* PackRegistersFromCallee(Function *F) {
+    ArgumentPackingInfo *API = PackInfo[F];
     vector<Type*> &ArgTy = API->getArgTy();
-    Module *M = F.getParent();
-    StringRef OrigName = F.getName();
+    Module *M = F->getParent();
+    StringRef OrigName = F->getName();
     LLVMContext *Context = API->Context;
-    DataLayout *DL = new DataLayout(F.getParent());
-
-    FunctionType *NewFTy = FunctionType::get(F.getFunctionType()->getReturnType(), ArgTy, false);
-    Function *NewF = Function::Create(NewFTy, Function::ExternalLinkage, "", *M);
+    unique_ptr<DataLayout> DL(new DataLayout(M));
     ValueToValueMapTy VMap;
 
+    FunctionType *NewFTy = FunctionType::get(F->getFunctionType()->getReturnType(), ArgTy, false);
+    Function *NewF = Function::Create(NewFTy, Function::ExternalLinkage, "", *M);
+
     if (!API->WillPack.empty()) {
-      BasicBlock *PrevEntry = &(F.getEntryBlock());
+      BasicBlock *PrevEntry = &(F->getEntryBlock());
       BasicBlock *NewEntry = BasicBlock::Create(*Context);
 
       if (PrevEntry->getName() == "") PrevEntry->setName("prev_entry");
       NewEntry->setName("split_reg");
 
-      F.getBasicBlockList().push_front(NewEntry);
+      F->getBasicBlockList().push_front(NewEntry);
 
       map<Value*, Value*> ToBeTrunc;
 
@@ -156,10 +158,11 @@ private:
       BranchInst *Br = BranchInst::Create(PrevEntry, NewEntry);
     }
 
-    for (auto &BB : F) {
+    for (auto &BB : *F) {
       BasicBlock *NewBB = CloneBasicBlock(&BB, VMap, "", NewF);
       VMap[&BB] = NewBB;
     }
+    NewF->copyAttributesFrom(F);
 
     for (auto &[i, A] : API->NotPack) {
       A->replaceAllUsesWith(NewF->getArg(i));
@@ -172,22 +175,92 @@ private:
       }
     }
 
-    F.removeFromParent();
     NewF->setName(OrigName);
 
     ArgTy.clear();
-    VMap.clear();
+
+    return NewF;
   }
 
-  void PackRegistersFromCaller(CallInst &CI) {
+  pair<Instruction*, CallInst*> PackRegistersFromCaller(CallInst *CI, Function *NewF) {
+    Function *F = CI->getCalledFunction();
+    ArgumentPackingInfo *API = PackInfo[F];
+    Module *M = NewF->getParent();
+    LLVMContext *Context = API->Context;
+    BasicBlock *BB = CI->getParent();
+    unique_ptr<DataLayout> DL(new DataLayout(M));
 
-  }
+    vector<Value*> Args(API->PackedArgCount, NULL);
+    map<Argument*, Value*> ArgToParam;
+
+    for (unsigned i = 0; i < F->arg_size(); i++) {
+      Argument *A = F->getArg(i);
+      Value *V = CI->getOperand(i);
+      ArgToParam[A] = V;
+    }
     
+    for (auto &[i, A] : API->NotPack) {
+      Args[i] = ArgToParam[A];
+    }
+
+    Instruction *LastInstruction = CI;
+
+    for (auto &[i, Pack] : API->WillPack) {
+      vector<Instruction*> ZExts;
+
+      for (auto &A : Pack) {
+        Value *V = ArgToParam[A];
+        Instruction *ZExt = new ZExtInst(V, Type::getInt64Ty(*Context), "zext");
+        BB->getInstList().insertAfter(LastInstruction->getIterator(), ZExt);
+        LastInstruction = ZExt;
+
+        ZExts.push_back(ZExt);
+      }
+
+      Instruction *LastMerge = LastInstruction;
+
+      for (int j = Pack.size()-1; j >= 0; j--) {
+        if (j + 1 < Pack.size()) {
+          Instruction *Xor = BinaryOperator::CreateXor(LastMerge, ZExts[j], "merge");
+          LastMerge = Xor;
+          BB->getInstList().insertAfter(LastInstruction->getIterator(), Xor);
+          LastInstruction = Xor;
+        }
+        if (j > 0) {
+          unsigned long long NextSize = 1ULL << DL->getTypeSizeInBits(Pack[j-1]->getType());
+          Value *MulOp2 = ConstantInt::get(Type::getInt64Ty(*Context), NextSize);
+          Instruction *Mul = BinaryOperator::CreateMul(LastMerge, MulOp2, "merge");
+          LastMerge = Mul;
+          BB->getInstList().insertAfter(LastInstruction->getIterator(), Mul);
+          LastInstruction = Mul;
+        }
+      }
+
+      Args[i] = LastMerge;
+    }
+
+    FunctionType *FTy = NewF->getFunctionType();
+    CallInst *NewCI = CallInst::Create(FTy, NewF, Args, "");
+    NewCI->setAttributes(CI->getAttributes());
+    NewCI->setCallingConv(CI->getCallingConv());
+    NewCI->setTailCall(CI->getTailCallKind());
+    NewCI->setDebugLoc(CI->getDebugLoc());
+
+    if (F->getReturnType() != Type::getVoidTy(*Context)) {
+      NewCI->setName(CI->getName());
+    }
+
+    return make_pair(LastInstruction, NewCI);
+  }
+  
 public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
     
     vector<Function*> OrigFunctions;
+    vector<CallInst*> OrigCaller;
+    map<Function*, Function*> FunctionMap;
+    map<CallInst*, pair<Instruction*, CallInst*>> CallerMap;
 
     for (Function &F : M) {
       if (F.isDeclaration()) {
@@ -195,10 +268,63 @@ public:
       }
       PackInfo[&F] = new ArgumentPackingInfo(F);
       OrigFunctions.push_back(&F);
+
+      for (auto &BB : F) {
+        for (auto &I : BB) {
+          CallInst *CI = dyn_cast<CallInst>(&I);
+          if (!CI) continue;
+
+          Function *Called = CI->getCalledFunction();
+          if (!Called->isDeclaration()) {
+            OrigCaller.push_back(CI);
+          }
+        }
+      }
     }
 
     for (Function *F : OrigFunctions) {
-      PackRegistersFromCallee(*F);
+      Function *NewF = PackRegistersFromCallee(F);
+      FunctionMap[F] = NewF;
+    }
+
+    int cnt = 0;
+
+    vector<CallInst*> ToRemove;
+
+    for (Function &F : M) {
+      /*
+      if (F.isDeclaration() || FunctionMap.find(&F) != FunctionMap.end()) {
+        continue;
+      }
+      */
+
+      for (auto &BB : F) {
+        for (auto &I : BB) {
+          CallInst *CI = dyn_cast<CallInst>(&I);
+          if (!CI) continue;
+
+          Function *Called = CI->getCalledFunction();
+          if (!Called->isDeclaration()) {
+            CallerMap[CI] = PackRegistersFromCaller(CI, FunctionMap[Called]);
+            ToRemove.push_back(CI);
+          }
+        }
+      }
+    }
+
+    for (auto &CI : ToRemove) {
+      BasicBlock *BB = CI->getParent();
+      auto &[InsertionPoint, NewCI] = CallerMap[CI];
+
+      BB->getInstList().insertAfter(InsertionPoint->getIterator(), NewCI);
+      CI->replaceAllUsesWith(NewCI);
+      CI->removeFromParent();
+    }
+
+    for (Function *F : OrigFunctions) {
+      Function *NewF = FunctionMap[F];
+      F->removeFromParent();
+      NewF->setName(F->getName());
     }
 
     return PreservedAnalyses::all();

@@ -11,7 +11,6 @@ _dummy := $(shell mkdir -p obj)
 #####
 OPT_SRC=$(wildcard optimizations/*.cpp)
 OPT_OBJ=$(OPT_SRC:optimizations/%.cpp=obj/%.o)
-OPT_DEPS=$(wildcard src/*.h)
 #####
 
 all: bin/sf-compiler-team7 bin/interpreter #sf-compiler sf-compiler-tests
@@ -22,6 +21,7 @@ sf-compiler: $(team7opt) $(OBJ)
 #####
 bin/sf-compiler-team7: $(OBJ) $(OPT_OBJ)
 	@mkdir -p bin
+	@echo Linking sf-compiler-team7 ...
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(OBJ) $(OPT_OBJ)
 
 bin/interpreter:
@@ -38,22 +38,28 @@ test: sf-compiler-tests
 	@./run-filechecks.sh $(FILECHECK_PATH)
 
 obj/SimpleBackend.o: src/SimpleBackend.cpp $(DEPS)
+	@echo Building obj/SimpleBackend.o ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 obj/AssemblyEmitter.o: src/AssemblyEmitter.cpp $(DEPS)
+	@echo Building obj/AssemblyEmitter.o ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-obj/main.o: src/main.cpp $(DEPS)
+obj/main.o: src/main.cpp $(DEPS) $(OPT_DEPS)
+	@echo Building obj/main.o ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 obj/test_main.o: src/test_main.cpp $(DEPS)
+	@echo Building obj/test_main.o ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 obj/gtest_all.o: $(GTESTSRC)
+	@echo Building obj/gtest_all.o ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 #####
-obj/%.o: optimizations/%.cpp
+obj/%.o: optimizations/%.cpp optimizations/%.h
+	@echo Building $@ ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 #####
 

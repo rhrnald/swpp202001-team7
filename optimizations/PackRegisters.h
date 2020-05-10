@@ -1,5 +1,3 @@
-#include "WeirdArithmetic.h"
-
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/BasicBlock.h"
@@ -11,11 +9,25 @@
 using namespace llvm;
 
 
-  PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
+class PackRegisters : public PassInfoMixin<PackRegisters> {
+    
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM); /*{
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
-
+    
     // This below debug codes should be deleted.
-    outs() << "(WeirdArithmetic) Module Name: " << M.getName() << "\n";
+    outs() << "(PackRegisters) Module Name: " << M.getName() << "\n";
+
+    for (Function &F : M) {
+      outs() << F.getName() << "\n";
+      if (F.isDeclaration()) {
+        outs() << "  (declaration)\n";
+      }
+      for (BasicBlock &BB : F) {
+        outs() << "  " << BB.getName() << "\n";
+      }
+    }
 
     return PreservedAnalyses::all();
-  }
+  }*/
+};

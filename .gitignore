@@ -4,3 +4,4 @@ sf-compiler-tests
 .vscode
 obj
 .tmp.s
+bin

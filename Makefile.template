@@ -8,10 +8,27 @@ OBJ_TEST=$(SRC_TEST:src/%.cpp=obj/%.o) obj/gtest_all.o
 DEPS=$(wildcard src/*.h)
 _dummy := $(shell mkdir -p obj)
 
-all: sf-compiler sf-compiler-tests
+#####
+OPT_SRC=$(wildcard optimizations/*.cpp)
+OPT_OBJ=$(OPT_SRC:optimizations/%.cpp=obj/%.o)
+OPT_DEPS=$(wildcard src/*.h)
+#####
 
-sf-compiler: $(OBJ)
+all: bin/sf-compiler-team7 bin/interpreter #sf-compiler sf-compiler-tests
+
+sf-compiler: $(team7opt) $(OBJ)
 	@$(CXX) $(LDFLAGS) -o sf-compiler $(OBJ)
+
+#####
+bin/sf-compiler-team7: $(OBJ) $(OPT_OBJ)
+	@mkdir -p bin
+	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(OBJ) $(OPT_OBJ)
+
+bin/interpreter:
+	@rm -r -f ./interpreter/build
+	@./interpreter/build.sh
+#####
+
 
 sf-compiler-tests: $(OBJ_TEST)
 	@$(CXX) $(LDFLAGS) -o sf-compiler-tests $(OBJ_TEST)
@@ -35,5 +52,10 @@ obj/test_main.o: src/test_main.cpp $(DEPS)
 obj/gtest_all.o: $(GTESTSRC)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+#####
+obj/%.o: optimizations/%.cpp
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+#####
+
 clean:
-	rm -f sf-compiler sf-compiler-tests obj/*.o
+	rm -f bin/* sf-compiler sf-compiler-tests obj/*.o

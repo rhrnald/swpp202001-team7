@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
 
   FPM.addPass(SROA());
   FPM.addPass(ADCEPass());
-  FPM.addPass(InstCombinePass());
+  //FPM.addPass(InstCombinePass());
 
   FPM.addPass(RemoveUnsupportedOps());
 

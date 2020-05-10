@@ -1,3 +1,5 @@
+#include "PackRegisters.h"
+
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/BasicBlock.h"
@@ -8,12 +10,7 @@
 
 using namespace llvm;
 
-
-namespace {
-class PackRegisters : public PassInfoMixin<PackRegisters> {
-    
-public:
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
+PreservedAnalyses PackRegisters::run(Module &M, ModuleAnalysisManager &MAM) {
     FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
     
     // This below debug codes should be deleted.
@@ -30,6 +27,4 @@ public:
     }
 
     return PreservedAnalyses::all();
-  }
-};
 }

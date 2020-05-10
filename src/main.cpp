@@ -7,6 +7,8 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/Scalar/ADCE.h"
 
 //Our Optimization
 #include "../optimizations/Wrapper.h"
@@ -163,12 +165,19 @@ int main(int argc, char **argv) {
 
   FunctionPassManager FPM;
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
+
+  FPM.addPass(SROA());
+  FPM.addPass(RemoveUnsupportedOps());
+  FPM.addPass(ADCEPass());
+
   //FPM.addPass(InstCombinePass());
   //FPM.addPass(PackRegisters());
   //FPM.addPass(WeirdArithmetic());
 
   ModulePassManager MPM;
-  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));  
+  MPM.addPass(CheckConstExpr());
+
   // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
 
   // Run!

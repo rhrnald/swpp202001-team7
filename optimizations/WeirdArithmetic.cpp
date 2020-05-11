@@ -43,6 +43,7 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
     }
     // shift x, N => mul/div x, 2^N
     else if (I.isShift() && (C = dyn_cast<ConstantInt>(I.getOperand(1)))) {
+      const APInt *APX;
       uint64_t N = C->getZExtValue();
       X = I.getOperand(0);
       switch (I.getOpcode()) {
@@ -53,8 +54,11 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
           break;
         // ashr x, N => sdiv x, 2^N
         case BinaryOperator::AShr:
-          NewI = BinaryOperator::CreateSDiv(
-              X, ConstantInt::get(I.getType(), 1<<N));
+          // only if X is non-negative
+          if (match(X, m_APInt(APX)) && APX->isNonNegative()) {
+            NewI = BinaryOperator::CreateSDiv(
+                X, ConstantInt::get(I.getType(), 1<<N));
+          }
           break;
         // lshr x, N => udiv x, 2^N
         case BinaryOperator::LShr:

@@ -51,12 +51,12 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
           NewI = BinaryOperator::CreateMul(
               X, ConstantInt::get(I.getType(), 1<<N));
           break;
-          // ashr x, N => sdiv x, 2^N
+        // ashr x, N => sdiv x, 2^N
         case BinaryOperator::AShr:
           NewI = BinaryOperator::CreateSDiv(
               X, ConstantInt::get(I.getType(), 1<<N));
           break;
-          // lshr x, N => udiv x, 2^N
+        // lshr x, N => udiv x, 2^N
         case BinaryOperator::LShr:
           NewI = BinaryOperator::CreateUDiv(
               X, ConstantInt::get(I.getType(), 1<<N));

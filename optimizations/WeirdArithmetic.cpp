@@ -47,24 +47,24 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
       uint64_t N = C->getZExtValue();
       X = I.getOperand(0);
       switch (I.getOpcode()) {
-        // srl x, N => mul x, 2^N
-        case BinaryOperator::Shl:
-          NewI = BinaryOperator::CreateMul(
+      // srl x, N => mul x, 2^N
+      case BinaryOperator::Shl:
+        NewI = BinaryOperator::CreateMul(
+            X, ConstantInt::get(I.getType(), 1<<N));
+        break;
+      // ashr x, N => sdiv x, 2^N
+      case BinaryOperator::AShr:
+        // only if X is non-negative
+        if (match(X, m_APInt(APX)) && APX->isNonNegative()) {
+          NewI = BinaryOperator::CreateSDiv(
               X, ConstantInt::get(I.getType(), 1<<N));
-          break;
-        // ashr x, N => sdiv x, 2^N
-        case BinaryOperator::AShr:
-          // only if X is non-negative
-          if (match(X, m_APInt(APX)) && APX->isNonNegative()) {
-            NewI = BinaryOperator::CreateSDiv(
-                X, ConstantInt::get(I.getType(), 1<<N));
-          }
-          break;
-        // lshr x, N => udiv x, 2^N
-        case BinaryOperator::LShr:
-          NewI = BinaryOperator::CreateUDiv(
-              X, ConstantInt::get(I.getType(), 1<<N));
-          break;
+        }
+        break;
+      // lshr x, N => udiv x, 2^N
+      case BinaryOperator::LShr:
+        NewI = BinaryOperator::CreateUDiv(
+            X, ConstantInt::get(I.getType(), 1<<N));
+        break;
       }
     }
 

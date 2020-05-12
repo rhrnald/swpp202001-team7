@@ -30,9 +30,16 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
       NewI = BinaryOperator::CreateMul(
           X, ConstantInt::getSigned(I.getType(), -1));
     }
-    // c_and x, 2^n-1 => urem x, 2^n
+    // c_and x, N => urem x, N'
     else if (match(&I, m_c_And(m_Value(X), m_ConstantInt(C)))) {
+      Instruction *InstX;
       uint64_t N = C->getZExtValue();
+      // if x matches [shl ?, M], then fill the M LSBs of N with ones.
+      if ((InstX = dyn_cast<Instruction>(X))
+          && InstX->getOpcode() == BinaryOperator::Shl
+          && match(InstX->getOperand(1), m_ConstantInt(C))) {
+        N |= ((1 << C->getZExtValue()) - 1);
+      }
       // if (N+1) is a power of 2
       // - (N+1) is never zero, since instcombine pass removes
       //   [and x, -1] since it is redundant.

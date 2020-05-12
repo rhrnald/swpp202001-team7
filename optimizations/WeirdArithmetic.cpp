@@ -20,6 +20,7 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
     Value *X;
     ConstantInt *C;
     Instruction *NewI = nullptr;
+    const APInt *APX;
     // add x, x => mul x, 2
     if (match(&I, m_Add(m_Value(X), m_Deferred(X)))) {
       NewI = BinaryOperator::CreateMul(
@@ -31,7 +32,8 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
           X, ConstantInt::getSigned(I.getType(), -1));
     }
     // c_and x, 2^n-1 => urem x, 2^n
-    else if (match(&I, m_c_And(m_Value(X), m_ConstantInt(C)))) {
+    else if (match(&I, m_c_And(m_Value(X), m_ConstantInt(C))) &&
+             match(X, m_APInt(APX))) {
       uint64_t N = C->getZExtValue();
       // if (N+1) is a power of 2
       // - (N+1) is never zero, since instcombine pass removes
@@ -43,7 +45,6 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
     }
     // shift x, N => mul/div x, 2^N
     else if (I.isShift() && (C = dyn_cast<ConstantInt>(I.getOperand(1)))) {
-      const APInt *APX;
       uint64_t N = C->getZExtValue();
       X = I.getOperand(0);
       switch (I.getOpcode()) {

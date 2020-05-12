@@ -12,13 +12,13 @@ using namespace std;
 
 class ArgumentPackingInfo {
 public:
+  vector<Type*> ArgTy;
   map<unsigned, Argument*> NotPack;
   map<unsigned, vector<Argument*>> WillPack;
   unsigned PackedArgCount;
   LLVMContext *Context;
 
   ArgumentPackingInfo(Function &F);
-  vector<Type*>& getArgTy();
   void clear();
 };
 

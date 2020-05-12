@@ -51,32 +51,24 @@ ArgumentPackingInfo::ArgumentPackingInfo(Function &F) {
       for (unsigned i = PackedFrom; i <= PackedNow; i++) {
         WillPack[PackedCount].push_back(Args[i].second);
       }
+      ArgTy.push_back(Type::getInt64Ty(*Context));
       PackedCount++;
       PackedFrom = PackedNow + 1;
       PackedSize = 0;
     } else {
+      ArgTy.push_back(Args[PackedFrom].second->getType());
       PackedSize -= Args[PackedFrom].first;
       NotPack[PackedCount++] = Args[PackedFrom++].second;
     }
   }
 
   PackedArgCount = PackedCount;
+
   Args.clear();
 }
 
-vector<Type*>& ArgumentPackingInfo::getArgTy() {
-  vector<Type*> *PArgTy = new vector<Type*>(), &ArgTy = *PArgTy;
-  for (unsigned i = 0; i < PackedArgCount; i++) {
-    if (NotPack.find(i) != NotPack.end()) {
-      ArgTy.push_back(NotPack[i]->getType());
-    } else {
-      ArgTy.push_back(Type::getInt64Ty(*Context));
-    }
-  }
-  return ArgTy;
-}
-
 void ArgumentPackingInfo::clear() {
+  ArgTy.clear();
   NotPack.clear();
   for (auto &[_, V] : WillPack) V.clear();
   WillPack.clear();
@@ -85,9 +77,8 @@ void ArgumentPackingInfo::clear() {
 
 Function* PackRegisters::PackRegistersFromCallee(Function *F) {
   ArgumentPackingInfo *API = PackInfo[F];
-  vector<Type*> &ArgTy = API->getArgTy();
+  vector<Type*> &ArgTy = API->ArgTy;
   Module *M = F->getParent();
-  StringRef OrigName = F->getName();
   LLVMContext *Context = API->Context;
   unique_ptr<DataLayout> DL(new DataLayout(M));
   ValueToValueMapTy VMap;
@@ -95,9 +86,15 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
   FunctionType *NewFTy = FunctionType::get(F->getFunctionType()->getReturnType(), ArgTy, false);
   Function *NewF = Function::Create(NewFTy, Function::ExternalLinkage, "", *M);
 
+  for (auto &[i, A] : API->NotPack) {
+    A->replaceAllUsesWith(NewF->getArg(i));
+    NewF->getArg(i)->setName(A->getName());
+  }
+
   if (!API->WillPack.empty()) {
     BasicBlock *PrevEntry = &(F->getEntryBlock());
     BasicBlock *NewEntry = BasicBlock::Create(*Context);
+    auto &NewEntryInstList = NewEntry->getInstList();
 
     if (PrevEntry->getName() == "") PrevEntry->setName("prev_entry");
     NewEntry->setName("split_reg");
@@ -106,41 +103,45 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
 
     map<Value*, Value*> ToBeTrunc;
 
-    for (auto &[i, P] : API->WillPack) {
+    for (auto &[i, Pack] : API->WillPack) {
       bool Init = 1;
       Value *NewA = NewF->getArg(i);
-      Value *BeforeDiv;
-      Value *BeforeA;
+      Value *BeforeDivisor;
       Value *BeforeRem;
       unsigned BeforeASize;
+      Twine MergedName = "merged";
 
-      for (auto &A : P) {
+      for (auto &A : Pack) {
         if (!Init) {
-          Instruction *Rem = BinaryOperator::CreateUDiv(BeforeRem, BeforeDiv, "merge");
-          NewEntry->getInstList().push_back(Rem);
-          BeforeRem = Rem;
+          Instruction *UDiv = BinaryOperator::CreateUDiv(BeforeRem, BeforeDivisor, "merge");
+          NewEntryInstList.push_back(UDiv);
+          BeforeRem = UDiv;
         } else {
           BeforeRem = NewA;
           Init = 0;
         }
         unsigned long long ASize = 1ULL << DL->getTypeSizeInBits(A->getType());
-        Value *Div = ConstantInt::get(Type::getInt64Ty(*Context), ASize);
-        Instruction *Rem = BinaryOperator::CreateURem(BeforeRem, Div, "zext");
-        NewEntry->getInstList().push_back(Rem);
-        ToBeTrunc[A] = Rem;
+        Value *Divisor = ConstantInt::get(Type::getInt64Ty(*Context), ASize);
+        Instruction *URem = BinaryOperator::CreateURem(BeforeRem, Divisor, "zext." + A->getName());
+        NewEntryInstList.push_back(URem);
+        ToBeTrunc[A] = URem;
 
-        BeforeDiv = Div;
+        BeforeDivisor = Divisor;
         BeforeASize = ASize;
+        MergedName.concat("." + A->getName());
       }
+
+      NewF->getArg(i)->setName(MergedName);
     }
 
-    for (auto &[A, ZA] : ToBeTrunc) {
-      Instruction *Trunc = new TruncInst(ZA, A->getType(), "trunc");
-      NewEntry->getInstList().push_back(Trunc);
+    for (auto &[A, ZExtA] : ToBeTrunc) {
+      Instruction *Trunc = new TruncInst(ZExtA, A->getType(), "trunc." + A->getName());
+      NewEntryInstList.push_back(Trunc);
       A->replaceAllUsesWith(Trunc);
     }
 
     BranchInst *Br = BranchInst::Create(PrevEntry, NewEntry);
+    ToBeTrunc.clear();
   }
 
   for (auto &BB : *F) {
@@ -148,21 +149,7 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
     VMap[&BB] = NewBB;
   }
   NewF->copyAttributesFrom(F);
-
-  for (auto &[i, A] : API->NotPack) {
-    A->replaceAllUsesWith(NewF->getArg(i));
-    NewF->getArg(i)->setName(A->getName());
-  }
-
-  for (auto &A : NewF->args()) {
-    if (A.getName() == "") {
-      A.setName("merged");
-    }
-  }
-
-  NewF->setName(OrigName);
-
-  ArgTy.clear();
+  NewF->setName(F->getName());
 
   return NewF;
 }
@@ -174,6 +161,7 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
   LLVMContext *Context = API->Context;
   BasicBlock *BB = CI->getParent();
   unique_ptr<DataLayout> DL(new DataLayout(M));
+  auto &BBInstList = BB->getInstList();
 
   vector<Value*> Args(API->PackedArgCount, NULL);
   map<Argument*, Value*> ArgToParam;
@@ -195,8 +183,8 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
 
     for (auto &A : Pack) {
       Value *V = ArgToParam[A];
-      Instruction *ZExt = new ZExtInst(V, Type::getInt64Ty(*Context), "zext");
-      BB->getInstList().insertAfter(LastInstruction->getIterator(), ZExt);
+      Instruction *ZExt = new ZExtInst(V, Type::getInt64Ty(*Context), "zext." + A->getName());
+      BBInstList.insertAfter(LastInstruction->getIterator(), ZExt);
       LastInstruction = ZExt;
 
       ZExts.push_back(ZExt);
@@ -208,24 +196,24 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
       if (j + 1 < Pack.size()) {
         Instruction *Xor = BinaryOperator::CreateXor(LastMerge, ZExts[j], "merge");
         LastMerge = Xor;
-        BB->getInstList().insertAfter(LastInstruction->getIterator(), Xor);
+        BBInstList.insertAfter(LastInstruction->getIterator(), Xor);
         LastInstruction = Xor;
       }
       if (j > 0) {
         unsigned long long NextSize = 1ULL << DL->getTypeSizeInBits(Pack[j-1]->getType());
-        Value *MulOp2 = ConstantInt::get(Type::getInt64Ty(*Context), NextSize);
-        Instruction *Mul = BinaryOperator::CreateMul(LastMerge, MulOp2, "merge");
+        Value *Multiplier = ConstantInt::get(Type::getInt64Ty(*Context), NextSize);
+        Instruction *Mul = BinaryOperator::CreateMul(LastMerge, Multiplier, "merge");
+        BBInstList.insertAfter(LastInstruction->getIterator(), Mul);
         LastMerge = Mul;
-        BB->getInstList().insertAfter(LastInstruction->getIterator(), Mul);
         LastInstruction = Mul;
       }
     }
 
     Args[i] = LastMerge;
+    ZExts.clear();
   }
 
-  FunctionType *FTy = NewF->getFunctionType();
-  CallInst *NewCI = CallInst::Create(FTy, NewF, Args, "");
+  CallInst *NewCI = CallInst::Create(NewF->getFunctionType(), NewF, Args, "");
   NewCI->setAttributes(CI->getAttributes());
   NewCI->setCallingConv(CI->getCallingConv());
   NewCI->setTailCall(CI->getTailCallKind());
@@ -235,6 +223,9 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
     NewCI->setName(CI->getName());
   }
 
+  Args.clear();
+  ArgToParam.clear();
+
   return make_pair(LastInstruction, NewCI);
 }
 
@@ -242,27 +233,14 @@ PreservedAnalyses PackRegisters::run(Module &M, ModuleAnalysisManager &MAM) {
   FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
   
   vector<Function*> OrigFunctions;
-  vector<CallInst*> OrigCaller;
   map<Function*, Function*> FunctionMap;
   map<CallInst*, pair<Instruction*, CallInst*>> CallerMap;
+  vector<CallInst*> ToRemove;
 
   for (Function &F : M) {
-    if (F.isDeclaration()) {
-      continue;
-    }
-    PackInfo[&F] = new ArgumentPackingInfo(F);
-    OrigFunctions.push_back(&F);
-
-    for (auto &BB : F) {
-      for (auto &I : BB) {
-        CallInst *CI = dyn_cast<CallInst>(&I);
-        if (!CI) continue;
-
-        Function *Called = CI->getCalledFunction();
-        if (!Called->isDeclaration()) {
-          OrigCaller.push_back(CI);
-        }
-      }
+    if (!F.isDeclaration()) {
+      PackInfo[&F] = new ArgumentPackingInfo(F);
+      OrigFunctions.push_back(&F);
     }
   }
 
@@ -270,10 +248,6 @@ PreservedAnalyses PackRegisters::run(Module &M, ModuleAnalysisManager &MAM) {
     Function *NewF = PackRegistersFromCallee(F);
     FunctionMap[F] = NewF;
   }
-
-  int cnt = 0;
-
-  vector<CallInst*> ToRemove;
 
   for (Function &F : M) {
     for (auto &BB : F) {
@@ -304,6 +278,15 @@ PreservedAnalyses PackRegisters::run(Module &M, ModuleAnalysisManager &MAM) {
     F->removeFromParent();
     NewF->setName(F->getName());
   }
+
+  OrigFunctions.clear();
+  FunctionMap.clear();
+  CallerMap.clear();
+  ToRemove.clear();
+  for (auto &[F, PI] : PackInfo) {
+    PI->clear();
+  }
+  PackInfo.clear();
 
   return PreservedAnalyses::all();
 }

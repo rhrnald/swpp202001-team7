@@ -20,7 +20,6 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
     Value *X;
     ConstantInt *C;
     Instruction *NewI = nullptr;
-    const APInt *APX;
     // add x, x => mul x, 2
     if (match(&I, m_Add(m_Value(X), m_Deferred(X)))) {
       NewI = BinaryOperator::CreateMul(
@@ -32,8 +31,7 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
           X, ConstantInt::getSigned(I.getType(), -1));
     }
     // c_and x, 2^n-1 => urem x, 2^n
-    else if (match(&I, m_c_And(m_Value(X), m_ConstantInt(C))) &&
-             match(X, m_APInt(APX))) {
+    else if (match(&I, m_c_And(m_Value(X), m_ConstantInt(C)))) {
       uint64_t N = C->getZExtValue();
       // if (N+1) is a power of 2
       // - (N+1) is never zero, since instcombine pass removes
@@ -52,14 +50,6 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
       case BinaryOperator::Shl:
         NewI = BinaryOperator::CreateMul(
             X, ConstantInt::get(I.getType(), 1<<N));
-        break;
-      // ashr x, N => sdiv x, 2^N
-      case BinaryOperator::AShr:
-        // only if X is non-negative
-        if (match(X, m_APInt(APX)) && APX->isNonNegative()) {
-          NewI = BinaryOperator::CreateSDiv(
-              X, ConstantInt::get(I.getType(), 1<<N));
-        }
         break;
       // lshr x, N => udiv x, 2^N
       case BinaryOperator::LShr:

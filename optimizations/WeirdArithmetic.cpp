@@ -65,6 +65,11 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
         break;
       }
     }
+    // and i1 x, y => mul i1 x, y
+    else if (I.getOpcode() == BinaryOperator::And
+            && I.getType() == Type::getInt1Ty(M.getContext())) {
+      NewI = BinaryOperator::CreateMul(I.getOperand(0), I.getOperand(1));
+    }
 
     if (NewI) Worklist.push_back(make_pair(&I, NewI));
   }

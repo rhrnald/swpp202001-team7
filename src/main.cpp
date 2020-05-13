@@ -7,6 +7,15 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/Scalar/ADCE.h"
+
+//Our Optimization
+#include "../optimizations/Wrapper.h"
+//#include "../optimizations/PackRegisters.cpp"
+
+//Additional Pass
+#include "llvm/Transforms/InstCombine/InstCombine.h"
 
 #include <string>
 
@@ -21,8 +30,11 @@ static cl::opt<string> optInput(
     cl::value_desc("filename"), cl::cat(optCategory));
 
 static cl::opt<string> optOutput(
-    "o", cl::desc("output assembly file"), cl::cat(optCategory), cl::Required,
-    cl::init("a.s"));
+    "o", cl::desc("output assembly file"), cl::cat(optCategory),
+    cl::init(""));
+
+static cl::opt<string> optOutputLL(
+    "d", cl::desc("LL to LL "), cl::cat(optCategory), cl::init(""));
 
 static cl::opt<bool> optPrintDepromotedModule(
     "print-depromoted-module", cl::desc("print depromoted module"),
@@ -44,18 +56,6 @@ static unique_ptr<Module> openInputFile(LLVMContext &Context,
   ExitOnErr(M->materializeAll());
   return M;
 }
-
-
-class DoNothingPass : public llvm::PassInfoMixin<DoNothingPass> {
-  std::string outputFile;
-
-public:
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
-    //outs() << "Hi! " << F.getName() << "\n";
-    return PreservedAnalyses::all();
-  }
-};
-
 
 int main(int argc, char **argv) {
   sys::PrintStackTraceOnErrorSignal(argv[0]);
@@ -83,18 +83,38 @@ int main(int argc, char **argv) {
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
 
-  FunctionPassManager FPM;
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
-  FPM.addPass(DoNothingPass());
+  FunctionPassManager FPM;
 
-  ModulePassManager MPM;
-  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+  FPM.addPass(SROA());
+  FPM.addPass(ADCEPass());
+  FPM.addPass(InstCombinePass());
+
+  FPM.addPass(RemoveUnsupportedOps());
+
   // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
-  // TODO: InstRenamer needed!!
-  MPM.addPass(SimpleBackend(optOutput, optPrintDepromotedModule));
+  ModulePassManager MPM;
+  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));  
+
+  MPM.addPass(CheckConstExpr());
+  MPM.addPass(PackRegisters());
+  MPM.addPass(WeirdArithmetic());
 
   // Run!
-  MPM.run(*M, MAM);
+  string ll=optOutputLL;
+  string s=optOutput;
+  if(ll=="" && s=="") s="a.s";
+
+  if(ll!="") {
+    error_code EC;
+    raw_fd_ostream fout(ll, EC);
+    fout << *M;
+  }
+
+  if(s!="") {
+    MPM.addPass(SimpleBackend(s, optPrintDepromotedModule));
+    MPM.run(*M, MAM);
+  }
 
   return 0;
 }

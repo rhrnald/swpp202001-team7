@@ -1,4 +1,5 @@
 #include "SimpleBackend.h"
+#include "llvm/Analysis/TargetFolder.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/InstrTypes.h"
@@ -38,13 +39,16 @@ private:
   unique_ptr<Module> ModuleToEmit;
   Function *FuncToEmit = nullptr;
   BasicBlock *BBToEmit = nullptr;
-  unique_ptr<IRBuilder<>> Builder;
+  unique_ptr<IRBuilder<TargetFolder>> Builder;
+  Function *MallocFn = nullptr;
 
   map<Function *, Function *> FuncMap;
-  map<GlobalVariable *, GlobalVariable *> GVMap;
+  map<GlobalVariable *, Constant *> GVMap; // Global var to 'inttoptr i'
+  vector<pair<uint64_t, uint64_t>> GVLocs; // (Global var addr, size) info
   map<Argument *, Argument *> ArgMap;
   map<BasicBlock *, BasicBlock *> BBMap;
   map<Instruction *, AllocaInst *> RegToAllocaMap;
+  map<PHINode *, AllocaInst *> PhiToTempAllocaMap;
 
   void raiseError(Instruction &I) {
     errs() << "DepromoteRegisters: Unsupported Instruction: " << I << "\n";
@@ -123,6 +127,9 @@ private:
     } else if (isa<ConstantPointerNull>(V)) {
       return V;
 
+    } else if (isa<UndefValue>(V)) {
+      return UndefValue::get(I64Ty);
+
     } else if (auto *GV = dyn_cast<GlobalVariable>(V)) {
       assert(GVMap.count(GV));
       return GVMap[GV];
@@ -145,7 +152,10 @@ public:
     I64Ty = IntegerType::getInt64Ty(*Context);
     I1Ty = IntegerType::getInt1Ty(*Context);
     I8PtrTy = PointerType::getInt8PtrTy(*Context);
+    ModuleToEmit->setDataLayout(M.getDataLayout());
 
+    uint64_t GVOffset = 20480;
+    FunctionType *MallocTy = nullptr;
     for (auto &G : M.global_objects()) {
       if (auto *F = dyn_cast<Function>(&G)) {
         SmallVector<Type *, 16> FuncArgTys;
@@ -164,16 +174,32 @@ public:
         FuncMap[F] = Function::Create(FTy, Function::ExternalLinkage,
                                       F->getName(), *ModuleToEmit);
 
+        if (F->getName() == "malloc") {
+          assert(FuncArgTys.size() == 1 && FuncArgTys[0] == I64Ty &&
+                 "malloc has one argument");
+          assert(RetTy->isPointerTy() && "malloc should return pointer");
+          MallocTy = dyn_cast<FunctionType>(F->getValueType());
+          MallocFn = FuncMap[F];
+        }
+
       } else {
         GlobalVariable *GVSrc = dyn_cast<GlobalVariable>(&G);
-        assert(GVSrc);
-        // Clone the global variable into tgt.
-        auto *GVTgt = new GlobalVariable(GVSrc->getValueType(),
-            GVSrc->isConstant(), GVSrc->getLinkage(), GVSrc->getInitializer(),
-            GVSrc->getName());
-        ModuleToEmit->getGlobalList().push_back(GVTgt);
-        GVMap[GVSrc] = GVTgt;
+        assert(GVSrc &&
+               "A global object is neither function nor global variable");
+
+        unsigned sz = (getAccessSize(GVSrc->getValueType()) + 7) / 8 * 8;
+        auto *CI = ConstantInt::get(I64Ty, GVOffset);
+        GVMap[GVSrc] = ConstantExpr::getIntToPtr(CI, GVSrc->getType());
+        GVLocs.emplace_back(GVOffset, sz);
+
+        GVOffset += sz;
       }
+    }
+
+    if (!MallocFn) {
+      MallocTy = FunctionType::get(I8PtrTy, {I64Ty}, false);
+      MallocFn = Function::Create(MallocTy, Function::ExternalLinkage,
+                                  "malloc", *ModuleToEmit);
     }
   }
 
@@ -191,7 +217,7 @@ public:
 
     // Fill source BB -> target BB map.
     for (auto &BB : F) {
-      BBMap[&BB] = BasicBlock::Create(*Context, BB.getName(), FuncToEmit);
+      BBMap[&BB] = BasicBlock::Create(*Context, "." + BB.getName(), FuncToEmit);
     }
   }
 
@@ -210,11 +236,28 @@ public:
           checkSrcType(Ty);
           RegToAllocaMap[&*I] =
             IB.CreateAlloca(SrcToTgtType(Ty), nullptr, I->getName() + "_slot");
+          if (auto *PN = dyn_cast<PHINode>(&*I)) {
+            PhiToTempAllocaMap[PN] =
+              IB.CreateAlloca(SrcToTgtType(Ty), nullptr,
+                              I->getName() + "_phi_tmp_slot");
+          }
+        }
+      }
+      if (FuncToEmit->getName() == "main") {
+        // Let's create a malloc for each global var.
+        // This is dummy register.
+        string Reg1 = assemblyRegisterName(1);
+        for (auto &[_, Size] : GVLocs) {
+          auto *ArgTy =
+            dyn_cast<IntegerType>(MallocFn->getFunctionType()->getParamType(0));
+          assert(ArgTy);
+          IB.CreateCall(MallocFn, {ConstantInt::get(ArgTy, Size)}, Reg1);
         }
       }
     }
 
-    Builder = make_unique<IRBuilder<>>(BBToEmit);
+    Builder = make_unique<IRBuilder<TargetFolder>>(BBToEmit,
+        TargetFolder(ModuleToEmit->getDataLayout()));
   }
 
   // Unsupported instruction goes here.
@@ -500,10 +543,38 @@ public:
   }
 
   void processPHIsInSuccessor(BasicBlock *Succ, BasicBlock *BBFrom) {
-    for (auto &PHI : Succ->phis())
-      emitStoreToSrcRegister(
-        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), 1),
-        &PHI);
+    // PHIs can use each other:
+    // ex)
+    // loop:
+    //   x = phi [0, entry] [y, loop] // y from the prev. iteration
+    //   y = phi [1, entry] [x, loop] // x from the prev. iteration
+    //   ...
+    //   br label %loop
+    //
+    // This should be lowered into:
+    // loop:
+    //   (value x is 'load x_slot')
+    //   (value y is 'load y_slot')
+    //   ...
+    //   store y, x_phi_tmp_slot
+    //   store x, y_phi_tmp_slot
+    //   store (load x_phi_tmp_slot), x_slot
+    //   store (load y_phi_tmp_slot), y_slot
+    for (auto &PHI : Succ->phis()) {
+      auto *V =
+        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), 1);
+      checkTgtType(V->getType());
+      assert(!isa<Instruction>(V) || !V->hasName() ||
+             V->getName().startswith("__r"));
+      assert(PhiToTempAllocaMap.count(&PHI));
+      Builder->CreateStore(V, PhiToTempAllocaMap[&PHI]);
+    }
+    for (auto &PHI : Succ->phis()) {
+      assert(RegToAllocaMap.count(&PHI));
+      Builder->CreateStore(
+        Builder->CreateLoad(PhiToTempAllocaMap[&PHI], assemblyRegisterName(1)),
+        RegToAllocaMap[&PHI]);
+    }
   }
 
 
@@ -538,7 +609,23 @@ public:
   }
 };
 
-
+class ConstExprToInsts : public InstVisitor<ConstExprToInsts> {
+  Instruction *ConvertCEToInst(ConstantExpr *CE, Instruction *InsertBefore) {
+    auto *NewI = CE->getAsInstruction();
+    NewI->insertBefore(InsertBefore);
+    NewI->setName("from_constexpr");
+    visitInstruction(*NewI);
+    return NewI;
+  }
+public:
+  void visitInstruction(Instruction &I) {
+    for (unsigned Idx = 0; Idx < I.getNumOperands(); ++Idx) {
+      if (auto *CE = dyn_cast<ConstantExpr>(I.getOperand(Idx))) {
+        I.setOperand(Idx, ConvertCEToInst(CE, &I));
+      }
+    }
+  }
+};
 
 
 PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
@@ -549,7 +636,11 @@ PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
   InstNamer Namer;
   Namer.visit(M);
 
-  // Second, depromote registers to alloca & canonicalize iN types into i64.
+  // Second, convert known constant expressions to instructions.
+  ConstExprToInsts CEI;
+  CEI.visit(M);
+
+  // Third, depromote registers to alloca & canonicalize iN types into i64.
   DepromoteRegisters Deprom;
   Deprom.visit(M);
 

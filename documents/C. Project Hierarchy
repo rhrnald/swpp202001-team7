@@ -9,7 +9,7 @@ Compiler
 │   ├── RemoveUnsupportedOps.cpp/h
 │   ├── PackRegisters.cpp/h
 │   └── WeirdArithmetic.cpp/h
-├── Interpreter
+├── interpreter
 │   └── (Imported from swpp202001-interpreter)
 ├── obj(After build)
 │   └── *.o

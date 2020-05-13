@@ -11,8 +11,7 @@
 #include "llvm/Transforms/Scalar/ADCE.h"
 
 //Our Optimization
-#include "../optimizations/Wrapper.h"
-//#include "../optimizations/PackRegisters.cpp"
+#include "../passes/Wrapper.h"
 
 //Additional Pass
 #include "llvm/Transforms/InstCombine/InstCombine.h"

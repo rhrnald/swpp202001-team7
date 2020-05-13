@@ -1,35 +1,53 @@
 .SUFFIXES : .cpp .o
 
-SRC_ALL=$(wildcard src/*.cpp)
-SRC=$(filter-out src/test_main.cpp, $(SRC_ALL))
-SRC_TEST=$(filter-out src/main.cpp, $(SRC_ALL))
-OBJ=$(SRC:src/%.cpp=obj/%.o)
-OBJ_TEST=$(SRC_TEST:src/%.cpp=obj/%.o) obj/gtest_all.o
-DEPS=$(wildcard src/*.h)
-_dummy := $(shell mkdir -p obj)
+#Set variable
+CORE_SRC=$(wildcard src/core/*.cpp)
+PASSES_SRC=$(wildcard src/passes/*.cpp)
+TEST_SRC=$(wildcard src/test/*.cpp)
 
-###########START
+CORE_OBJ=$(CORE_SRC:src/core/%.cpp=obj/core/%.o)
+PASSES_OBJ=$(PASSES_SRC:src/passes/%.cpp=obj/passes/%.o)
+TEST_OBJ=$(TEST_SRC:src/test/%.cpp=obj/test/%.o) obj/gtest_all.o
 
-#Set variaable
-OPT_SRC=$(wildcard optimizations/*.cpp)
-OPT_OBJ=$(OPT_SRC:optimizations/%.cpp=obj/%.o)
+_dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test)
 
-#Call Make function of compiler and interpreter
-all: bin/sf-compiler-team7 bin/interpreter #sf-compiler-tests
+all: bin/sf-compiler-team7 #bin/interpreter #sf-compiler-tests
 
-#Build Core(Compiler) Using built object
-bin/sf-compiler-team7: $(OBJ) $(OPT_OBJ)
+#Build Core
+bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
 	@mkdir -p bin
 	@echo Linking sf-compiler-team7 ...
-	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(OBJ) $(OPT_OBJ)
+	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(CORE_OBJ) $(PASSES_OBJ)
+
+#Build Test Core
+bin/sf-compiler-tests-team7: $(CORE_OBJ) $(PASSES_OBJ) $(TEST_OBJ)
+	@echo Linking sf-compiler-team7 ...
+	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(PASSES_OBJ) $(CORE_OBJ)
 
 #Build Interpreter
 bin/interpreter:
 	@rm -r -f ./interpreter/build
 	@./interpreter/build.sh
 
-###########END
 
+#Build Objects
+obj/core/%.o: src/core/%.cpp 
+	@echo Building $@ ...
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+obj/passes/%.o: src/passes/%.cpp src/passes/%.h
+	@echo Building $@ ...
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+obj/test/%.o: src/test/%.cpp src/test/%.h
+	@echo Building $@ ...
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+obj/gtest_all.o: $(GTESTSRC)
+	@echo Building obj/gtest_all.o ...
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+#Tests
 sf-compiler-tests: $(OBJ_TEST)
 	@$(CXX) $(LDFLAGS) -o sf-compiler-tests $(OBJ_TEST)
 
@@ -37,34 +55,6 @@ test: sf-compiler-tests
 	@./sf-compiler-tests
 	@./run-filechecks.sh $(FILECHECK_PATH)
 
-obj/SimpleBackend.o: src/SimpleBackend.cpp $(DEPS)
-	@echo Building obj/SimpleBackend.o ...
-	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-obj/AssemblyEmitter.o: src/AssemblyEmitter.cpp $(DEPS)
-	@echo Building obj/AssemblyEmitter.o ...
-	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-obj/main.o: src/main.cpp $(DEPS) $(OPT_DEPS)
-	@echo Building obj/main.o ...
-	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-obj/test_main.o: src/test_main.cpp $(DEPS)
-	@echo Building obj/test_main.o ...
-	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-obj/gtest_all.o: $(GTESTSRC)
-	@echo Building obj/gtest_all.o ...
-	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-###########START
-
-# Overload building cpp files in optimizations directory
-obj/%.o: optimizations/%.cpp optimizations/%.h
-	@echo Building $@ ...
-	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-###########END
-
+#clean
 clean:
-	rm -f bin/* sf-compiler sf-compiler-tests obj/*.o
+	rm -rf bin obj

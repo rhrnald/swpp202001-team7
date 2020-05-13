@@ -214,14 +214,11 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
       ZExts.push_back(ZExt);
     }
 
-    Instruction *LastMerge = LastInstruction; // Lastly merged Instruction ptr
-
     for (int j = Pack.size()-1; j >= 0; j--) {
       // Reverse order packing
       if (j + 1 < Pack.size()) {
         // E.x., %merge.1 = xor i64 %merge, %zext.a
-        Instruction *Xor = BinaryOperator::CreateXor(LastMerge, ZExts[j], "merge");
-        LastMerge = Xor;
+        Instruction *Xor = BinaryOperator::CreateXor(LastInstruction, ZExts[j], "merge");
         BBInstList.insertAfter(LastInstruction->getIterator(), Xor);
         LastInstruction = Xor;
       }
@@ -229,15 +226,14 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
         // E.x., %merge.1 = mul i64 %merge, 256
         unsigned long long NextSize = 1ULL << DL->getTypeSizeInBits(Pack[j-1]->getType());
         Value *Multiplier = ConstantInt::get(Type::getInt64Ty(*Context), NextSize);
-        Instruction *Mul = BinaryOperator::CreateMul(LastMerge, Multiplier, "merge");
+        Instruction *Mul = BinaryOperator::CreateMul(LastInstruction, Multiplier, "merge");
         BBInstList.insertAfter(LastInstruction->getIterator(), Mul);
-        LastMerge = Mul;
         LastInstruction = Mul;
       }
     }
 
     // NewF's ith argument is LastMerge
-    Args[i] = LastMerge;
+    Args[i] = LastInstruction;
     ZExts.clear();
   }
 

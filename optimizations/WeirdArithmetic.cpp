@@ -1,11 +1,6 @@
 #include "WeirdArithmetic.h"
 
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/PatternMatch.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/PassPlugin.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
@@ -13,8 +8,6 @@ using namespace llvm::PatternMatch;
 using namespace std;
 
 PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
-  FunctionAnalysisManager &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
-
   vector< pair<Instruction *, Instruction *> > Worklist;
   for (auto &F : M) for (auto &BB : F) for (auto &I : BB) {
     Value *X;

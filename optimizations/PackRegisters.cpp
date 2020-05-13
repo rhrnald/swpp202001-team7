@@ -235,7 +235,7 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
       }
     }
 
-    // NewF's ith argument is LastMerge
+    // NewF's ith argument is LastInstruction
     Args[i] = LastInstruction;
     ZExts.clear();
   }

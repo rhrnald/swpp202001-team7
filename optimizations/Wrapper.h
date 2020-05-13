@@ -1,4 +1,4 @@
-#include "PackRegisters.cpp"
-#include "WeirdArithmetic.cpp"
-#include "CheckConstExpr.cpp"
-#include "RemoveUnsupportedOps.cpp"
+#include "PackRegisters.h"
+#include "WeirdArithmetic.h"
+#include "CheckConstExpr.h"
+#include "RemoveUnsupportedOps.h"

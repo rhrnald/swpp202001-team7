@@ -103,17 +103,14 @@ int main(int argc, char **argv) {
   // Run!
   string ll=optOutputLL;
   string s=optOutput;
-  if(ll=="" && s=="") s="a.s";
+
+  if(s=="") s="a.s";
+  MPM.run(*M, MAM);
 
   if(ll!="") {
     error_code EC;
     raw_fd_ostream fout(ll, EC);
     fout << *M;
-  }
-
-  if(s!="") {
-    MPM.addPass(SimpleBackend(s, optPrintDepromotedModule));
-    MPM.run(*M, MAM);
   }
 
   return 0;

@@ -1,9 +1,7 @@
-#include "llvm/IR/PassManager.h"
-#include "llvm/IR/PatternMatch.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/PassPlugin.h"
-#include "llvm/Support/raw_ostream.h"
+#ifndef PACK_REGISTERS
+#define PACK_REGISTERS
+
+#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
@@ -60,3 +58,4 @@ public:
   /* run - Runs the main optimization! */
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
 };
+#endif

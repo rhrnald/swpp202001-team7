@@ -43,6 +43,10 @@ ArgumentPackingInfo::ArgumentPackingInfo(Function &F) {
   unsigned PackedCount = 0, PackedSize = Args[0].first,
            PackedFrom = 0, PackedNow = 0;
   
+  unsigned PackBits[4] = {8, 16, 32, 64};
+  IntegerType* PackTypes[4] = {Type::getInt8Ty(*Context), Type::getInt16Ty(*Context),
+                               Type::getInt32Ty(*Context), Type::getInt64Ty(*Context)};
+  
   // PackFrom: The starting index of Args
   // PackNow: The moving index of Args
   // PackedSize: Args[PackFrom].Size + ... + Args[PackNow].Size
@@ -57,8 +61,13 @@ ArgumentPackingInfo::ArgumentPackingInfo(Function &F) {
       for (unsigned i = PackedFrom; i <= PackedNow; i++) {
         WillPack[PackedCount].push_back(Args[i].second);
       }
-      // The type of newly packed argument: i64
-      ArgTy.push_back(Type::getInt64Ty(*Context));
+      for (unsigned t = 0; t < 4; t++) {
+        if (PackedSize <= PackBits[t]) {
+          // The type of newly packed argument
+          ArgTy.push_back(PackTypes[t]);
+          break;
+        }
+      }
       PackedCount++;
       PackedFrom = PackedNow + 1;
       PackedSize = 0;
@@ -125,6 +134,7 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
       Value *BeforeDivisor;
       Value *BeforeRem;
       unsigned BeforeASize;
+      Type* PackType = ArgTy[i];
 
       for (auto &A : Pack) {
         // Sequentially read the packed argument
@@ -139,7 +149,7 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
         }
         // E.x., %zext.a = urem i64 %merged, 256
         unsigned long long ASize = 1ULL << DL->getTypeSizeInBits(A->getType());
-        Value *Divisor = ConstantInt::get(Type::getInt64Ty(*Context), ASize);
+        Value *Divisor = ConstantInt::get(PackType, ASize);
         Instruction *URem = BinaryOperator::CreateURem(BeforeRem, Divisor, "zext." + A->getName());
         NewEntryInstList.push_back(URem);
         ToBeTrunc[A] = URem;
@@ -203,11 +213,12 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
   // Process WillPack. Merge registers before the function call
   for (auto &[i, Pack] : API->WillPack) {
     vector<Instruction*> ZExts; // ZExts of every original argument
+    Type *PackType = API->ArgTy[i];
 
     for (auto &A : Pack) {
       // E.x., %zext.a = zext i8 %a to i64
       Value *V = ArgToParam[A];
-      Instruction *ZExt = new ZExtInst(V, Type::getInt64Ty(*Context), "zext." + V->getName());
+      Instruction *ZExt = new ZExtInst(V, PackType, "zext." + V->getName());
       BBInstList.insertAfter(LastInstruction->getIterator(), ZExt);
       LastInstruction = ZExt;
 
@@ -225,7 +236,7 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
       if (j > 0) {
         // E.x., %merge.1 = mul i64 %merge, 256
         unsigned long long NextSize = 1ULL << DL->getTypeSizeInBits(Pack[j-1]->getType());
-        Value *Multiplier = ConstantInt::get(Type::getInt64Ty(*Context), NextSize);
+        Value *Multiplier = ConstantInt::get(PackType, NextSize);
         Instruction *Mul = BinaryOperator::CreateMul(LastInstruction, Multiplier, "merge");
         BBInstList.insertAfter(LastInstruction->getIterator(), Mul);
         LastInstruction = Mul;

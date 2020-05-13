@@ -13,13 +13,8 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
     Value *X;
     ConstantInt *C;
     Instruction *NewI = nullptr;
-    // add x, x => mul x, 2
-    if (match(&I, m_Add(m_Value(X), m_Deferred(X)))) {
-      NewI = BinaryOperator::CreateMul(
-          X, ConstantInt::get(I.getType(), 2));
-    }
     // sub 0, x => mul x, -1
-    else if (match(&I, m_Sub(m_ZeroInt(), m_Value(X)))) {
+    if (match(&I, m_Sub(m_ZeroInt(), m_Value(X)))) {
       NewI = BinaryOperator::CreateMul(
           X, ConstantInt::getSigned(I.getType(), -1));
     }

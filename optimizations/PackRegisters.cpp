@@ -129,33 +129,36 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
     map<Value*, Value*> ToBeTrunc; // ZExted arguments; should be truncated.
 
     for (auto &[i, Pack] : API->WillPack) {
-      bool Init = 1;
       Value *NewA = NewF->getArg(i);
       Value *BeforeDivisor;
       Value *BeforeRem;
       unsigned BeforeASize;
       Type* PackType = ArgTy[i];
 
-      for (auto &A : Pack) {
+      for (unsigned j = 0; j < Pack.size(); j++) {
+        auto &A = Pack[j];
         // Sequentially read the packed argument
-        if (!Init) {
+        if (j != 0) {
           // E.x., %merge = udiv i64 %merged, 256
           Instruction *UDiv = BinaryOperator::CreateUDiv(BeforeRem, BeforeDivisor, "merge");
           NewEntryInstList.push_back(UDiv);
           BeforeRem = UDiv;
         } else {
           BeforeRem = NewA;
-          Init = 0;
         }
-        // E.x., %zext.a = urem i64 %merged, 256
-        unsigned long long ASize = 1ULL << DL->getTypeSizeInBits(A->getType());
-        Value *Divisor = ConstantInt::get(PackType, ASize);
-        Instruction *URem = BinaryOperator::CreateURem(BeforeRem, Divisor, "zext." + A->getName());
-        NewEntryInstList.push_back(URem);
-        ToBeTrunc[A] = URem;
+        if (j + 1 != Pack.size()) {
+          // E.x., %zext.a = urem i64 %merged, 256
+          unsigned long long ASize = 1ULL << DL->getTypeSizeInBits(A->getType());
+          Value *Divisor = ConstantInt::get(PackType, ASize);
+          Instruction *URem = BinaryOperator::CreateURem(BeforeRem, Divisor, "zext." + A->getName());
+          NewEntryInstList.push_back(URem);
+          ToBeTrunc[A] = URem;
 
-        BeforeDivisor = Divisor;
-        BeforeASize = ASize;
+          BeforeDivisor = Divisor;
+          BeforeASize = ASize;
+        } else {
+          ToBeTrunc[A] = BeforeRem;
+        }
       }
 
       NewF->getArg(i)->setName("merged");

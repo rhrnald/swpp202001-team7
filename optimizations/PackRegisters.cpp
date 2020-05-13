@@ -43,9 +43,12 @@ ArgumentPackingInfo::ArgumentPackingInfo(Function &F) {
   unsigned PackedCount = 0, PackedSize = Args[0].first,
            PackedFrom = 0, PackedNow = 0;
   
+  // PackFrom: The starting index of Args
+  // PackNow: The moving index of Args
+  // PackedSize: Args[PackFrom].Size + ... + Args[PackNow].Size
   while (PackedFrom < ArgCount) {
     // Pack as much Arguments as possible
-    while (PackedNow + 1 < Args.size() &&
+    while (PackedNow + 1 < Args.size() && // lookahead checker
             PackedSize + Args[PackedNow + 1].first <= PACK_MAX_SIZE) {
       PackedSize += Args[++PackedNow].first;
     }
@@ -54,12 +57,14 @@ ArgumentPackingInfo::ArgumentPackingInfo(Function &F) {
       for (unsigned i = PackedFrom; i <= PackedNow; i++) {
         WillPack[PackedCount].push_back(Args[i].second);
       }
+      // The type of newly packed argument: i64
       ArgTy.push_back(Type::getInt64Ty(*Context));
       PackedCount++;
       PackedFrom = PackedNow + 1;
       PackedSize = 0;
     } else {
       // No profit for packing
+      // The type of newly added argument: same to the old one
       ArgTy.push_back(Args[PackedFrom].second->getType());
       PackedSize -= Args[PackedFrom].first;
       NotPack[PackedCount++] = Args[PackedFrom++].second;

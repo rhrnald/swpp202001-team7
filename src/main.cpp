@@ -29,19 +29,21 @@ static cl::opt<string> optInput(
     cl::Positional, cl::desc("<input bitcode file>"), cl::Required,
     cl::value_desc("filename"), cl::cat(optCategory));
 
+//Change -o option not to be required. If none, output "a.s" file.
 static cl::opt<string> optOutput(
     "o", cl::desc("output assembly file"), cl::cat(optCategory),
     cl::init(""));
 
+//Add -d option for debugging.
 static cl::opt<string> optOutputLL(
-    "d", cl::desc("LL to LL "), cl::cat(optCategory), cl::init(""));
+    "d", cl::desc("Export LL file together"), cl::cat(optCategory), cl::init(""));
 
+//Usage removed because our own debug way had asserted.
 static cl::opt<bool> optPrintDepromotedModule(
     "print-depromoted-module", cl::desc("print depromoted module"),
     cl::cat(optCategory), cl::init(false));
 
 static llvm::ExitOnError ExitOnErr;
-
 
 // adapted from llvm-dis.cpp
 static unique_ptr<Module> openInputFile(LLVMContext &Context,

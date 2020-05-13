@@ -8,27 +8,27 @@ OBJ_TEST=$(SRC_TEST:src/%.cpp=obj/%.o) obj/gtest_all.o
 DEPS=$(wildcard src/*.h)
 _dummy := $(shell mkdir -p obj)
 
-#####
+###########START
+
+#Set variaable
 OPT_SRC=$(wildcard optimizations/*.cpp)
 OPT_OBJ=$(OPT_SRC:optimizations/%.cpp=obj/%.o)
-#####
 
-all: bin/sf-compiler-team7 bin/interpreter #sf-compiler sf-compiler-tests
+#Call Make function of compiler and interpreter
+all: bin/sf-compiler-team7 bin/interpreter #sf-compiler-tests
 
-sf-compiler: $(team7opt) $(OBJ)
-	@$(CXX) $(LDFLAGS) -o sf-compiler $(OBJ)
-
-#####
+#Build Core(Compiler) Using built object
 bin/sf-compiler-team7: $(OBJ) $(OPT_OBJ)
 	@mkdir -p bin
 	@echo Linking sf-compiler-team7 ...
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(OBJ) $(OPT_OBJ)
 
+#Build Interpreter
 bin/interpreter:
 	@rm -r -f ./interpreter/build
 	@./interpreter/build.sh
-#####
 
+###########END
 
 sf-compiler-tests: $(OBJ_TEST)
 	@$(CXX) $(LDFLAGS) -o sf-compiler-tests $(OBJ_TEST)
@@ -57,11 +57,14 @@ obj/gtest_all.o: $(GTESTSRC)
 	@echo Building obj/gtest_all.o ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-#####
+###########START
+
+# Overload building cpp files in optimizations directory
 obj/%.o: optimizations/%.cpp optimizations/%.h
 	@echo Building $@ ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-#####
+
+###########END
 
 clean:
 	rm -f bin/* sf-compiler sf-compiler-tests obj/*.o

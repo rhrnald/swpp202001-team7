@@ -9,6 +9,8 @@ Memory::Memory() {
   head = -1;
   memset(stack, 0, STACK_MAX);
   freed.insert(block_t(HEAP_MIN, HEAP_MAX));
+  alloced_size = 0;
+  max_alloced_size = 0;
 }
 
 alloc_t Memory::find_block(uint64_t addr) const {
@@ -170,6 +172,9 @@ double Memory::exec_malloc(uint64_t size, uint64_t& result) {
 
     alloced.insert(alloc_t(block_t(block.first, block.first + size), ptr));
     result = block.first;
+    alloced_size += size;
+    if (max_alloced_size < alloced_size)
+      max_alloced_size = alloced_size;
     return Cost::MALLOC;
   }
 
@@ -187,6 +192,7 @@ double Memory::exec_free(uint64_t addr) {
 
   block_t block = alloc_lb->first;
   uint8_t* ptr = alloc_lb->second;
+  uint64_t size = block.second - block.first;
   alloced.erase(alloc_lb);
   free(ptr);
 
@@ -210,6 +216,7 @@ double Memory::exec_free(uint64_t addr) {
   }
 
   freed.insert(block);
+  alloced_size -= size;
   return Cost::FREE;
 }
 
@@ -222,3 +229,7 @@ double Memory::exec_reset_heap() {
   head = HEAP_MIN;
   return Cost::RESET;
 }
+
+uint64_t Memory::get_alloced_size() const { return alloced_size; }
+
+uint64_t Memory::get_max_alloced_size() const { return max_alloced_size; }

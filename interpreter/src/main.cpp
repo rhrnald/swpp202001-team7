@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
   log << fixed << setprecision(4);
   log << "Returned: " << ret << endl;
   log << "Cost: " << state.get_cost() << endl;
+  log << "Max heap usage (bytes): " << state.get_max_alloced_size() << endl;
   log.close();
 
   return 0;

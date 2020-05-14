@@ -11,6 +11,10 @@ void State::set_program(Program* _program) {
 
 double State::get_cost() const { return cost; }
 
+uint64_t State::get_max_alloced_size() const {
+  return memory.get_max_alloced_size();
+}
+
 uint64_t State::exec_function(Function* function) {
   Stmt* curr = function->get_first_bb();
   if (curr == nullptr)

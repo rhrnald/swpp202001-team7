@@ -11,13 +11,13 @@ TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(TEST_SRC:src/test/%.cpp=ob
 
 _dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test) $(shell mkdir -p bin)
 
+all: bin/sf-compiler-team7 bin/sf-compiler-tests-team7 bin/interpreter
+
 help:
 	@echo make help: print these message
 	@echo make core: build sf-compiler-team7
 	@echo make test: build sf-compiler-tests-team7 and execute
 	@echo make all: build core, test, interpreter
-
-all: bin/sf-compiler-team7 bin/sf-compiler-tests-team7 bin/interpreter
 
 #Build Core
 bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
@@ -25,7 +25,7 @@ bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(CORE_OBJ) $(PASSES_OBJ)
 
 #Build Test Core
-bin/sf-compiler-tests-team7: $(PASSES_OBJ) $(TEST_OBJ)
+bin/sf-compiler-test-team7: $(PASSES_OBJ) $(TEST_OBJ)
 	@echo Linking sf-compiler-test-team7 ...
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-test-team7 $(PASSES_OBJ) $(TEST_OBJ)
 
@@ -55,9 +55,10 @@ obj/test/%.o: src/test/%.cpp
 #Alias
 core: bin/sf-compiler-team7
 
-test: bin/sf-compiler-tests-team7
+test: $(all)
+	@echo Googletest
 	@./bin/sf-compiler-test-team7
-#	@./run-filechecks.sh $(FILECHECK_PATH)
+	@./run-filechecks.sh $(LLVM_BIN)
 
 #clean
 clean:

@@ -5,4 +5,3 @@ sf-compiler-tests
 obj
 .tmp.s
 bin
-testcases

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-rm -f sf-interpreter
+cd interpreter
 mkdir -p build
 cd build
 cmake ../
 make -j
-cp sf-interpreter ../
+cp sf-interpreter ../../bin/interpreter
 cd ..

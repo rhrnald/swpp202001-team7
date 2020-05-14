@@ -1,5 +1,5 @@
 #!/bin/bash
 
 cd workspace
-./run-filechecks.sh $1
+./checker.sh $1
 cd ..

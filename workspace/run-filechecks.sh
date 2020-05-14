@@ -3,23 +3,29 @@
 echo
 echo Case test start
 
-for i in `find ./ -name "sample*"` ; do
-  echo Testing $i
-  cd $i
-  echo Building..
-  gcc src.c ../io.c -o a.out
-  bash ../c-to-ll.sh src.c src.ll $1
-  ../../bin/sf-compiler-team7 src.ll -o opt.s
+python3 log_checker.py
 
-  mkdir -p out_gcc out_llvm
+for tc in testcases/*/; do
+  echo Testing $tc
+  cd $tc
 
-  for j in `ls ./input/`; do
-    echo case: $j
-    ./a.out <input/$j >out_gcc/$j
-    ../../bin/interpreter opt.s <input/$j >out_llvm/$j
-    diff -w out_gcc/$j out_llvm/$j
+  orig_ll=src/*.ll
+  orig_s=src/*.s
+  test_s="ours.s"
+  log="sf-interpreter.log"
+  log1="log1"
+  log2="log2"
+
+  ../../../bin/sf-compiler-team7 $orig_ll -o $test_s
+
+  for inp in test/input*; do
+    ../../../bin/interpreter $orig_s < $inp > .tmp1
+    mv $log $log1
+    ../../../bin/interpreter $test_s < $inp > .tmp2
+    mv $log $log2
+    python3 ../../log_checker.py $inp .tmp1 .tmp2 $log1 $log2
+    rm .tmp1 .tmp2 $log1 $log2
   done
-  echo Testing $i done
-  echo
-  cd ..
+  rm $test_s
+  cd ../..
 done

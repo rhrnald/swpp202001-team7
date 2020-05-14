@@ -9,7 +9,7 @@ CORE_OBJ=$(CORE_SRC:src/core/%.cpp=obj/core/%.o)
 PASSES_OBJ=$(PASSES_SRC:src/passes/%.cpp=obj/passes/%.o)
 TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(TEST_SRC:src/test/%.cpp=obj/test/%.o) obj/gtest_all.o
 
-_dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test)
+_dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test) $(shell mkdir -p bin)
 
 help:
 	@echo make help: print these message
@@ -21,7 +21,6 @@ all: bin/sf-compiler-team7 bin/sf-compiler-tests-team7 bin/interpreter
 
 #Build Core
 bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
-	@mkdir -p bin
 	@echo Linking sf-compiler-team7 ...
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(CORE_OBJ) $(PASSES_OBJ)
 

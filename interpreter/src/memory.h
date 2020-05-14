@@ -26,6 +26,8 @@ private:
   uint8_t stack[STACK_MAX];
   set<alloc_t> alloced;
   set<block_t> freed;
+  uint64_t alloced_size;
+  uint64_t max_alloced_size;
 
   alloc_t find_block(uint64_t addr) const;
   uint64_t load_stack(MSize size, uint64_t addr) const;
@@ -36,6 +38,8 @@ private:
 public:
   Memory();
 
+  uint64_t get_alloced_size() const;
+  uint64_t get_max_alloced_size() const;
   double exec_load(MSize size, uint64_t addr, uint64_t& result);
   double exec_store(MSize size, uint64_t addr, uint64_t val);
   double exec_malloc(uint64_t size, uint64_t& result);

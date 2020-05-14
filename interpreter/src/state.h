@@ -22,6 +22,7 @@ public:
 
   void set_program(Program* _program);
   double get_cost() const;
+  uint64_t get_max_alloced_size() const;
   uint64_t exec_function(Function* function);
 };
 

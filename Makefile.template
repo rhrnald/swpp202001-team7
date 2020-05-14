@@ -11,12 +11,12 @@ TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(TEST_SRC:src/test/%.cpp=ob
 
 _dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test) $(shell mkdir -p bin)
 
-all: bin/sf-compiler-team7 bin/sf-compiler-tests-team7 bin/interpreter
+all: bin/sf-compiler-team7 bin/sf-compiler-test-team7 bin/interpreter
 
 help:
 	@echo make help: print these message
 	@echo make core: build sf-compiler-team7
-	@echo make test: build sf-compiler-tests-team7 and execute
+	@echo make test: build sf-compiler-test-team7 and execute
 	@echo make all: build core, test, interpreter
 
 #Build Core

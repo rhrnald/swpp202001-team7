@@ -7,11 +7,17 @@ TEST_SRC=$(wildcard src/test/*.cpp)
 
 CORE_OBJ=$(CORE_SRC:src/core/%.cpp=obj/core/%.o)
 PASSES_OBJ=$(PASSES_SRC:src/passes/%.cpp=obj/passes/%.o)
-TEST_OBJ=$(TEST_SRC:src/test/%.cpp=obj/test/%.o) obj/gtest_all.o
+TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(TEST_SRC:src/test/%.cpp=obj/test/%.o) obj/gtest_all.o
 
 _dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test)
 
-all: bin/sf-compiler-team7 #bin/interpreter #sf-compiler-tests
+help:
+	@echo make help: print these message
+	@echo make core: build sf-compiler-team7
+	@echo make test: build sf-compiler-tests-team7 and execute
+	@echo make all: build core, test, interpreter
+
+all: bin/sf-compiler-team7 bin/sf-compiler-tests-team7 bin/interpreter
 
 #Build Core
 bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
@@ -20,9 +26,9 @@ bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(CORE_OBJ) $(PASSES_OBJ)
 
 #Build Test Core
-bin/sf-compiler-tests-team7: $(CORE_OBJ) $(PASSES_OBJ) $(TEST_OBJ)
-	@echo Linking sf-compiler-team7 ...
-	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(PASSES_OBJ) $(CORE_OBJ)
+bin/sf-compiler-tests-team7: $(PASSES_OBJ) $(TEST_OBJ)
+	@echo Linking sf-compiler-test-team7 ...
+	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-test-team7 $(PASSES_OBJ) $(TEST_OBJ)
 
 #Build Interpreter
 bin/interpreter:
@@ -39,7 +45,7 @@ obj/passes/%.o: src/passes/%.cpp src/passes/%.h
 	@echo Building $@ ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-obj/test/%.o: src/test/%.cpp src/test/%.h
+obj/test/%.o: src/test/%.cpp
 	@echo Building $@ ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
@@ -47,13 +53,12 @@ obj/gtest_all.o: $(GTESTSRC)
 	@echo Building obj/gtest_all.o ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-#Tests
-sf-compiler-tests: $(OBJ_TEST)
-	@$(CXX) $(LDFLAGS) -o sf-compiler-tests $(OBJ_TEST)
+#Alias
+core: bin/sf-compiler-team7
 
-test: sf-compiler-tests
-	@./sf-compiler-tests
-	@./run-filechecks.sh $(FILECHECK_PATH)
+test: bin/sf-compiler-tests-team7
+	@./bin/sf-compiler-test-team7
+#	@./run-filechecks.sh $(FILECHECK_PATH)
 
 #clean
 clean:

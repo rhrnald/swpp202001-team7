@@ -7,7 +7,7 @@ TEST_SRC=$(wildcard src/test/*.cpp)
 
 CORE_OBJ=$(CORE_SRC:src/core/%.cpp=obj/core/%.o)
 PASSES_OBJ=$(PASSES_SRC:src/passes/%.cpp=obj/passes/%.o)
-TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(TEST_SRC:src/test/%.cpp=obj/test/%.o) obj/gtest_all.o
+TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(TEST_SRC:src/test/%.cpp=obj/test/%.o) obj/test/gtest_all.o
 
 _dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test) $(shell mkdir -p bin)
 
@@ -44,12 +44,12 @@ obj/passes/%.o: src/passes/%.cpp src/passes/%.h
 	@echo Building $@ ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-obj/test/%.o: src/test/%.cpp
-	@echo Building $@ ...
+obj/test/gtest_all.o: $(GTESTSRC)
+	@echo Building obj/test/gtest_all.o ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-obj/gtest_all.o: $(GTESTSRC)
-	@echo Building obj/gtest_all.o ...
+obj/test/%.o: src/test/%.cpp
+	@echo Building $@ ...
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 #Alias

@@ -62,10 +62,10 @@ obj/test/%.o: src/test/%.cpp
 #Alias
 core: bin/sf-compiler-team7
 
-test: $(all)
+test: all
 	@echo Googletest
 	@./bin/sf-compiler-test-team7
-	@./run-filechecks.sh $(LLVM_BIN)
+	@workspace/checker.sh $(LLVM_BIN)
 
 #clean
 clean:

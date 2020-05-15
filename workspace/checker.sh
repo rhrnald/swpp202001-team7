@@ -1,5 +1,8 @@
 #/bin/bash
 
+PREVWD=$PWD
+cd $(dirname $0)
+
 echo
 echo Case test start
 
@@ -29,3 +32,5 @@ for tc in testcases/*/; do
   rm $test_s
   cd ../..
 done
+
+cd $PREVWD

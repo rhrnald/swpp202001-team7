@@ -171,6 +171,13 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
     BasicBlock *NewBB = CloneBasicBlock(&BB, VMap, "", NewF);
     VMap[&BB] = NewBB;
   }
+
+  // Remap Instructions for br and phi labels.
+  for (auto &NewBB : *NewF) {
+    for (auto &NewI : NewBB) {
+      RemapInstruction(&NewI, VMap, RF_NoModuleLevelChanges | RF_IgnoreMissingLocals);
+    }
+  }
   NewF->copyAttributesFrom(F);
   NewF->setName(F->getName());
 

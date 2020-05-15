@@ -5,7 +5,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
-#include "../core/SimpleBackend.h"
+#include "../core/Backend.h"
 
 using namespace llvm;
 using namespace std;

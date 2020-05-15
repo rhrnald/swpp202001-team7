@@ -1,4 +1,4 @@
-#include "../core/SimpleBackend.h"
+#include "SimpleBackend.h"
 
 #include "llvm/IR/PassManager.h"
 #include "llvm/IRReader/IRReader.h"

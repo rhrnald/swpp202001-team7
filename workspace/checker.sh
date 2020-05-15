@@ -29,3 +29,5 @@ for tc in $@; do
   done
   rm $test_s
 done
+
+echo Case test done

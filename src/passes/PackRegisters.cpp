@@ -310,14 +310,15 @@ PreservedAnalyses PackRegisters::run(Module &M, ModuleAnalysisManager &MAM) {
     // And replaceAllUses, and finally delete the original one.
     BB->getInstList().insertAfter(InsertionPoint->getIterator(), NewCI);
     CI->replaceAllUsesWith(NewCI);
-    CI->removeFromParent();
+    CI->eraseFromParent();
   }
 
   for (Function *F : OrigFunctions) {
     // Remove the original functions and rename the new ones.
     Function *NewF = FunctionMap[F];
-    F->removeFromParent();
-    NewF->setName(F->getName());
+    StringRef Name = F->getName();
+    F->eraseFromParent();
+    NewF->setName(Name);
   }
 
   // Memory cleaner

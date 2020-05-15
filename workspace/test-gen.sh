@@ -1,8 +1,20 @@
 #!/bin/bash
 
+if [ "$#" -eq 1 ]; then
+  mkdir -p $1
+  cd $1
+  mkdir -p src
+  mkdir -p test
+  cp ../../template.c src/$(basename $1).c
+  cd -
+  exit 0
+fi
+
 if [ "$#" -ne 2 ]; then
-  echo "test-gen.sh <testcase dir> <clang dir>"
-  echo "ex)  ./test-gen.sh ./testcases/binary_tree ~/llvm-10.0-releaseassert/bin" 
+  echo "test-gen.sh <testcase dir> [<clang dir>]"
+  echo "  ex)  ./test-gen.sh ./testcases/binary_tree ~/llvm-10.0-releaseassert/bin" 
+  echo "if there is no <clang dir>, it will just create the testcase structure."
+  echo "  ex) ./test-gen.sh ./testcases/new_test"
   exit 1
 fi
 

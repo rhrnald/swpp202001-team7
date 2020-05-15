@@ -95,7 +95,8 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
   // I will clone a new function from F.
   // There is no simpler way to change arguments of a function..
   FunctionType *NewFTy = FunctionType::get(F->getFunctionType()->getReturnType(), ArgTy, false);
-  Function *NewF = Function::Create(NewFTy, Function::ExternalLinkage, "", M);
+  Function *NewF = Function::Create(NewFTy, Function::ExternalLinkage, "");
+  M->getFunctionList().insertAfter(F->getIterator(), NewF);
 
   // Process for API->NotPack. Just replaceAllUseWith.
   for (auto &[i, A] : API->NotPack) {

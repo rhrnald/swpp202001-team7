@@ -4,14 +4,16 @@
 CORE_SRC=$(wildcard src/core/*.cpp)
 PASSES_SRC=$(wildcard src/passes/*.cpp)
 TEST_SRC=$(wildcard src/test/*.cpp)
+VANILLA_SRC=src/passes/RemoveUnsupportedOps.cpp src/passes/CheckConstExpr.cpp src/test/vanilla_main.cpp src/core/SimpleBackend.cpp src/core/AssemblyEmitter.cpp
 
 CORE_OBJ=$(CORE_SRC:src/core/%.cpp=obj/core/%.o)
 PASSES_OBJ=$(PASSES_SRC:src/passes/%.cpp=obj/passes/%.o)
-TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(TEST_SRC:src/test/%.cpp=obj/test/%.o) obj/test/gtest_all.o
+TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(filter-out obj/test/vanilla_main.o, $(TEST_SRC:src/test/%.cpp=obj/test/%.o)) obj/test/gtest_all.o
+VANILLA_OBJ=$(VANILLA_SRC:src/%.cpp=obj/%.o)
 
 _dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test) $(shell mkdir -p bin)
 
-all: bin/sf-compiler-team7 bin/sf-compiler-test-team7 bin/interpreter
+all: bin/sf-compiler-team7 bin/sf-compiler-test-team7 bin/sf-compiler-vanilla bin/interpreter
 
 help:
 	@echo make help: print these message
@@ -28,6 +30,11 @@ bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
 bin/sf-compiler-test-team7: $(PASSES_OBJ) $(TEST_OBJ)
 	@echo Linking sf-compiler-test-team7 ...
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-test-team7 $(PASSES_OBJ) $(TEST_OBJ)
+
+#Build Vanilla Core
+bin/sf-compiler-vanilla: $(VANILLA_OBJ)
+	@echo Linking sf-compiler-vanilla ...
+	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-vanilla $(VANILLA_OBJ)
 
 #Build Interpreter
 bin/interpreter:

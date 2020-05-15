@@ -242,10 +242,18 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
 
   // Create a new function call and copy every information from the original
   CallInst *NewCI = CallInst::Create(NewF->getFunctionType(), NewF, Args, "");
-  NewCI->setAttributes(CI->getAttributes());
   NewCI->setCallingConv(CI->getCallingConv());
   NewCI->setTailCall(CI->getTailCallKind());
   NewCI->setDebugLoc(CI->getDebugLoc());
+
+  // Copying parameter's attributes (e.x., nonnull)
+  for (auto &[i, A] : API->NotPack) {
+    unsigned j = A->getArgNo();
+    auto Attrs = CI->getAttributes().getParamAttributes(j);
+    for (auto &Kind : Attrs) {
+      NewCI->addParamAttr(i, Kind);
+    }
+  }
 
   // Set CallInst's target
   if (F->getReturnType() != Type::getVoidTy(*Context)) {

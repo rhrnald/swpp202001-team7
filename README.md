@@ -1,6 +1,6 @@
 # SWPP Compiler for Team 7
 
-#### About Development
+## About Development
 
 Programs on this project are divided into the three parts.
 
@@ -24,7 +24,7 @@ Our test code will compare the outputs and costs between the optimized compiler 
 
 
 
-#### How to run project
+## How to run project
 
 * Build
   ```
@@ -40,7 +40,7 @@ Our test code will compare the outputs and costs between the optimized compiler 
 
 
 
-#### How to execute individual programs.
+## How to execute individual programs.
 
 * sf-compiler-team7 (./bin/)
   ```

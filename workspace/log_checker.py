@@ -1,6 +1,9 @@
 #python3 log_checker.py (test case name) (original output) (optimized output) (original log) (optimized log)
 import os, sys
 
+TC_LEN = 15
+COST_LEN = 20
+
 RED = '\33[31m'
 BLUE = '\33[34m'
 GREEN = '\33[32m'
@@ -24,6 +27,12 @@ if len(sys.argv) != 6:
     exit(1)
 
 
+def colored(text, color):
+    return color + text + ORIG
+
+def fix_width(text, width):
+    return text + ' ' * (width - len(text))
+
 def read_output(arg):
     f = open(arg, 'r')
     s = f.read()
@@ -40,7 +49,7 @@ def read_log(arg):
     return (return_value, cost, heap_usage)
 
 
-test_case = sys.argv[1]
+test_case = sys.argv[1].split('/')[-1]
 o1 = read_output(sys.argv[2])
 o2 = read_output(sys.argv[3])
 r1, c1, h1 = read_log(sys.argv[4])
@@ -48,12 +57,12 @@ r2, c2, h2 = read_log(sys.argv[5])
 
 if o1 == o2:
     if r1 == r2:
-        print('>> Testing ' + test_case + GREEN + ' [AC] ' + ORIG + '\t' \
-                + str(c1) + '(' + str(h1) + ')\t' + ' --> ' \
-                + str(c2) + '(' + str(h2) + ')')
+        print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [AC] ', GREEN) + '   ' \
+                + fix_width(str(c1) + '(' + str(h1) + ')', COST_LEN) + ' --> ' \
+                + fix_width(str(c2) + '(' + str(h2) + ')', COST_LEN))
     else:
-        print('>> Testing ' + test_case + BLUE + ' [RE] ' + ORIG \
+        print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [RE] ', BLUE) \
                 + ' Return values are not same!')
 else:
-    print('>> Testing ' + test_case + RED + ' [WA] ' + ORIG \
-            + ': ' + RED + 'Output values are not same!' + ORIG)
+    print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [WA] ', RED) \
+            + ': ' + color('Output values are not same!', RED))

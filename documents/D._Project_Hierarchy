@@ -1,9 +1,12 @@
-Compiler
+swpp202001-team7
+├── documents
+│   └── (documentation files)
+├── interpreter (From TA's repository)
 ├── src
 │   ├── core
 │   │   ├── AssemblyEmitter.cpp
-│   │   ├── SimpleBackend.cpp
-│   │   ├── SimpleBackend.h
+│   │   ├── Backend.cpp
+│   │   ├── Backend.h
 │   │   └── main.cpp
 │   ├── passes
 │   │   ├── CheckConstExpr.cpp
@@ -16,26 +19,27 @@ Compiler
 │   │   ├── WeirdArithmetic.h
 │   │   └── Wrapper.h
 │   └── test
-│       └── test_main.cpp
+│       ├── AssemblyEmitter.cpp
+│       ├── SimpleBackend.cpp
+│       ├── SimpleBackend.h
+│       ├── test_main.cpp
+│       └── vanilla_main.cpp
 ├── workspace
+│   ├── testcases
+│   │   └── (testcase name)
+│   │       ├── src
+│   │       │   ├── (testcase name).c
+│   │       │   ├── (testcase name).ll
+│   │       │   └── (testcase name).s
+│   │       └── test
+│   │           └── inputX.txt
 │   ├── Manual.md
 │   ├── c-to-ll.sh
-│   └── sample.c
-├── interpreter
-│   └── (Imported from swpp202001-interpreter)
-├── obj(After build)
-│   ├── core(*.o)
-│   ├── passes(*.o)
-│   └── test(*.o)
-├── bin(After build)
-│   ├── sf-compiler-team7
-│   ├── sf-compiler-test-team7
-│   └── interpreter
-├── documents
-│   ├── A._Requirement_and_Specification.md
-│   ├── B._Planning.md
-│   └── C._Project_Hierarchy
+│   ├── checker.sh
+│   ├── log_checker.py
+│   ├── template.c
+│   └── test-gen.sh
 ├── Makefile.template
-├── Makefile
 ├── README.md
-└── configure.sh
+├── configure.sh
+└── llvm-10.0.json

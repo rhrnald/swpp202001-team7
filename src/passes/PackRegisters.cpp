@@ -95,7 +95,8 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
   // I will clone a new function from F.
   // There is no simpler way to change arguments of a function..
   FunctionType *NewFTy = FunctionType::get(F->getFunctionType()->getReturnType(), ArgTy, false);
-  Function *NewF = Function::Create(NewFTy, Function::ExternalLinkage, "", M);
+  Function *NewF = Function::Create(NewFTy, Function::ExternalLinkage, "");
+  M->getFunctionList().insertAfter(F->getIterator(), NewF);
 
   // Process for API->NotPack. Just replaceAllUseWith.
   for (auto &[i, A] : API->NotPack) {
@@ -171,9 +172,31 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
     BasicBlock *NewBB = CloneBasicBlock(&BB, VMap, "", NewF);
     VMap[&BB] = NewBB;
   }
-  NewF->copyAttributesFrom(F);
-  NewF->setName(F->getName());
 
+  // Remap Instructions for br and phi labels.
+  for (auto &NewBB : *NewF) {
+    for (auto &NewI : NewBB) {
+      RemapInstruction(&NewI, VMap, RF_NoModuleLevelChanges | RF_IgnoreMissingLocals);
+    }
+  }
+
+  // Copying attributes
+  NewF->setCallingConv(F->getCallingConv());
+  auto FnAttr = F->getAttributes().getFnAttributes();
+  for (auto &Kind : FnAttr) {
+    NewF->addFnAttr(Kind);
+  }
+
+  // Copying parameter's attributes
+  for (auto &[i, A] : API->NotPack) {
+    unsigned j = A->getArgNo();
+    auto Attrs = F->getAttributes().getParamAttributes(j);
+    for (auto &Kind : Attrs) {
+      NewF->addParamAttr(i, Kind);
+    }
+  }
+
+  NewF->setName(F->getName());
   return NewF;
 }
 
@@ -229,7 +252,7 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
         // E.x., %merge.1 = mul i64 %merge, 256
         unsigned long long NextSize = 1ULL << DL->getTypeSizeInBits(Pack[j-1]->getType());
         Value *Multiplier = ConstantInt::get(PackType, NextSize);
-        Instruction *Mul = BinaryOperator::CreateMul(LastInstruction, Multiplier, "merge");
+        Instruction *Mul = BinaryOperator::CreateNUWMul(LastInstruction, Multiplier, "merge");
         BBInstList.insertAfter(LastInstruction->getIterator(), Mul);
         LastInstruction = Mul;
       }
@@ -242,10 +265,18 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
 
   // Create a new function call and copy every information from the original
   CallInst *NewCI = CallInst::Create(NewF->getFunctionType(), NewF, Args, "");
-  NewCI->setAttributes(CI->getAttributes());
   NewCI->setCallingConv(CI->getCallingConv());
   NewCI->setTailCall(CI->getTailCallKind());
   NewCI->setDebugLoc(CI->getDebugLoc());
+
+  // Copying parameter's attributes (e.x., nonnull)
+  for (auto &[i, A] : API->NotPack) {
+    unsigned j = A->getArgNo();
+    auto Attrs = CI->getAttributes().getParamAttributes(j);
+    for (auto &Kind : Attrs) {
+      NewCI->addParamAttr(i, Kind);
+    }
+  }
 
   // Set CallInst's target
   if (F->getReturnType() != Type::getVoidTy(*Context)) {
@@ -310,14 +341,15 @@ PreservedAnalyses PackRegisters::run(Module &M, ModuleAnalysisManager &MAM) {
     // And replaceAllUses, and finally delete the original one.
     BB->getInstList().insertAfter(InsertionPoint->getIterator(), NewCI);
     CI->replaceAllUsesWith(NewCI);
-    CI->removeFromParent();
+    CI->eraseFromParent();
   }
 
   for (Function *F : OrigFunctions) {
     // Remove the original functions and rename the new ones.
     Function *NewF = FunctionMap[F];
-    F->removeFromParent();
-    NewF->setName(F->getName());
+    StringRef Name = F->getName();
+    F->eraseFromParent();
+    NewF->setName(Name);
   }
 
   // Memory cleaner

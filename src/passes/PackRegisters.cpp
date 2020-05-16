@@ -347,7 +347,7 @@ PreservedAnalyses PackRegisters::run(Module &M, ModuleAnalysisManager &MAM) {
   for (Function *F : OrigFunctions) {
     // Remove the original functions and rename the new ones.
     Function *NewF = FunctionMap[F];
-    StringRef Name = F->getName();
+    string Name = F->getName();
     F->eraseFromParent();
     NewF->setName(Name);
   }

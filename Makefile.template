@@ -4,20 +4,22 @@
 CORE_SRC=$(wildcard src/core/*.cpp)
 PASSES_SRC=$(wildcard src/passes/*.cpp)
 TEST_SRC=$(wildcard src/test/*.cpp)
+VANILLA_SRC=src/passes/RemoveUnsupportedOps.cpp src/passes/CheckConstExpr.cpp src/test/vanilla_main.cpp src/test/SimpleBackend.cpp src/test/AssemblyEmitter.cpp
 
 CORE_OBJ=$(CORE_SRC:src/core/%.cpp=obj/core/%.o)
 PASSES_OBJ=$(PASSES_SRC:src/passes/%.cpp=obj/passes/%.o)
-TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(TEST_SRC:src/test/%.cpp=obj/test/%.o) obj/test/gtest_all.o
+TEST_OBJ=$(filter-out obj/core/main.o, $(CORE_OBJ)) $(filter-out $(VANILLA_OBJ), $(TEST_SRC:src/test/%.cpp=obj/test/%.o)) obj/test/gtest_all.o
+VANILLA_OBJ=$(VANILLA_SRC:src/%.cpp=obj/%.o)
 
 _dummy := $(shell mkdir -p obj) $(shell mkdir -p obj/core) $(shell mkdir -p obj/passes) $(shell mkdir -p obj/test) $(shell mkdir -p bin)
+
+all: bin/sf-compiler-team7 bin/sf-compiler-test-team7 bin/sf-compiler-vanilla bin/interpreter
 
 help:
 	@echo make help: print these message
 	@echo make core: build sf-compiler-team7
-	@echo make test: build sf-compiler-tests-team7 and execute
+	@echo make test: build sf-compiler-test-team7 and execute
 	@echo make all: build core, test, interpreter
-
-all: bin/sf-compiler-team7 bin/sf-compiler-tests-team7 bin/interpreter
 
 #Build Core
 bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
@@ -25,9 +27,14 @@ bin/sf-compiler-team7: $(PASSES_OBJ) $(CORE_OBJ)
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-team7 $(CORE_OBJ) $(PASSES_OBJ)
 
 #Build Test Core
-bin/sf-compiler-tests-team7: $(PASSES_OBJ) $(TEST_OBJ)
+bin/sf-compiler-test-team7: $(PASSES_OBJ) $(TEST_OBJ)
 	@echo Linking sf-compiler-test-team7 ...
 	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-test-team7 $(PASSES_OBJ) $(TEST_OBJ)
+
+#Build Vanilla Core
+bin/sf-compiler-vanilla: $(VANILLA_OBJ)
+	@echo Linking sf-compiler-vanilla ...
+	@$(CXX) $(LDFLAGS) -o bin/sf-compiler-vanilla $(VANILLA_OBJ)
 
 #Build Interpreter
 bin/interpreter:
@@ -55,9 +62,10 @@ obj/test/%.o: src/test/%.cpp
 #Alias
 core: bin/sf-compiler-team7
 
-test: bin/sf-compiler-tests-team7
+test: all
+	@echo Googletest
 	@./bin/sf-compiler-test-team7
-#	@./run-filechecks.sh $(FILECHECK_PATH)
+	@workspace/checker.sh workspace/testcases/*
 
 #clean
 clean:

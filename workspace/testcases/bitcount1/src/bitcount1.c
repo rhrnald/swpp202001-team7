@@ -1,3 +1,4 @@
+// https://www.geeksforgeeks.org/count-set-bits-in-an-integer/
 #include<stdint.h>
 
 int64_t read();

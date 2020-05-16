@@ -1,4 +1,4 @@
-#include "SimpleBackend.h"
+#include "Backend.h"
 
 #include "llvm/IR/PassManager.h"
 #include "llvm/IRReader/IRReader.h"
@@ -106,6 +106,7 @@ int main(int argc, char **argv) {
   string s=optOutput;
 
   if(s=="") s="a.s";
+  MPM.addPass(SimpleBackend(s, false));
   MPM.run(*M, MAM);
 
   if(ll!="") {

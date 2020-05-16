@@ -179,9 +179,24 @@ Function* PackRegisters::PackRegistersFromCallee(Function *F) {
       RemapInstruction(&NewI, VMap, RF_NoModuleLevelChanges | RF_IgnoreMissingLocals);
     }
   }
-  NewF->copyAttributesFrom(F);
-  NewF->setName(F->getName());
 
+  // Copying attributes
+  NewF->setCallingConv(F->getCallingConv());
+  auto FnAttr = F->getAttributes().getFnAttributes();
+  for (auto &Kind : FnAttr) {
+    NewF->addFnAttr(Kind);
+  }
+
+  // Copying parameter's attributes
+  for (auto &[i, A] : API->NotPack) {
+    unsigned j = A->getArgNo();
+    auto Attrs = F->getAttributes().getParamAttributes(j);
+    for (auto &Kind : Attrs) {
+      NewF->addParamAttr(i, Kind);
+    }
+  }
+
+  NewF->setName(F->getName());
   return NewF;
 }
 
@@ -237,7 +252,7 @@ pair<Instruction*, CallInst*> PackRegisters::PackRegistersFromCaller(CallInst *C
         // E.x., %merge.1 = mul i64 %merge, 256
         unsigned long long NextSize = 1ULL << DL->getTypeSizeInBits(Pack[j-1]->getType());
         Value *Multiplier = ConstantInt::get(PackType, NextSize);
-        Instruction *Mul = BinaryOperator::CreateMul(LastInstruction, Multiplier, "merge");
+        Instruction *Mul = BinaryOperator::CreateNUWMul(LastInstruction, Multiplier, "merge");
         BBInstList.insertAfter(LastInstruction->getIterator(), Mul);
         LastInstruction = Mul;
       }

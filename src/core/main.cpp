@@ -98,7 +98,7 @@ int main(int argc, char **argv) {
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));  
 
   MPM.addPass(CheckConstExpr());
-  //MPM.addPass(PackRegisters());
+  MPM.addPass(PackRegisters());
   MPM.addPass(WeirdArithmetic());
 
   // Run!

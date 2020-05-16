@@ -48,6 +48,29 @@ def read_log(arg):
     f.close()
     return (return_value, cost, heap_usage)
 
+def delta(r1, c1, r2, c2):
+    dc = round(c2 - c1, 2)
+    dr = round(r2 - r1, 2)
+    ret = ''
+
+    if dc > 0:
+        ret = ret + colored('+' + str(dc), RED)
+    elif dc < 0:
+        ret = ret + colored(str(dc), BLUE)
+    else:
+        ret = ret + colored(str(dc), GREEN)
+
+    ret = ret + '('
+    if dr > 0:
+        ret = ret + colored('+' + str(dr), RED)
+    elif dr < 0:
+        ret = ret + colored(str(dr), BLUE)
+    else:
+        ret = ret + colored(str(dr), GREEN)
+    ret = ret + ')'
+    return ret
+
+
 
 test_case = sys.argv[1].split('/')[-1]
 o1 = read_output(sys.argv[2])
@@ -59,7 +82,8 @@ if o1 == o2:
     if r1 == r2:
         print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [AC] ', GREEN) + '   ' \
                 + fix_width(str(c1) + '(' + str(h1) + ')', COST_LEN) + ' --> ' \
-                + fix_width(str(c2) + '(' + str(h2) + ')', COST_LEN))
+                + fix_width(str(c2) + '(' + str(h2) + ')', COST_LEN) + '  ' \
+                + delta(r1, c1, r2, c2))
     else:
         print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [RE] ', BLUE) \
                 + ' Return values are not same!')

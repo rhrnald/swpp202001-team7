@@ -15,9 +15,9 @@ if len(sys.argv) == 1:
     print('>> [original cost]([original heap usage]) --> [optimized cost]([optimized heap usage])')
     print()
     print('And the following labels:')
-    print('>> ' + GREEN + '[AC]' + ORIG + ' to represent \'ACcepted output!')
-    print('>> ' + BLUE + '[RE]' + ORIG + ' to represent \'Runtime Error! (different return values)')
-    print('>> ' + RED + '[WA]' + ORIG + ' to represent \'Wrong Answer! (different outputs)')
+    print('>> ' + GREEN + '[AC]' + ORIG + ' to represent \'ACcepted output!\'')
+    print('>> ' + BLUE + '[RE]' + ORIG +  ' to represent \'Runtime Error!\'  (different return values)')
+    print('>> ' + RED + '[WA]' + ORIG +   ' to represent \'Wrong Answer!\'   (different outputs)')
     print('========================================')
     exit(0)
 

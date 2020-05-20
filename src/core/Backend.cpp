@@ -321,7 +321,8 @@ public:
     auto *Ty = BO.getType();
     checkSrcType(Ty);
 
-    switch(BO.getOpcode()) {
+    auto Opcode = BO.getOpcode();
+    switch(Opcode) {
     case Instruction::UDiv:
     case Instruction::URem:
     case Instruction::Mul:
@@ -347,12 +348,14 @@ public:
         assemblyRegisterName(2) + "after_trunc__");
 
     Value *Res = nullptr;
-    if (BO.getType() != I64Ty) {
-      Res = Builder->CreateBinOp(BO.getOpcode(), Op1Trunc, Op2Trunc,
+    // TODO: BO.getType() = Ty.
+    // TODO: BO.getOpcode() is repeated.
+    if (Ty != I64Ty) {
+      Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc,
                                  assemblyRegisterName(1) + "before_zext__");
       Res = Builder->CreateZExt(Res, I64Ty, assemblyRegisterName(1));
     } else {
-      Res = Builder->CreateBinOp(BO.getOpcode(), Op1Trunc, Op2Trunc,
+      Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc,
                                  assemblyRegisterName(1));
     }
     emitStoreToSrcRegister(Res, &BO);
@@ -449,6 +452,7 @@ public:
     auto *NegVal =
       Builder->CreateSub(ConstantInt::get(I64Ty, 0), AndVal,
                          assemblyRegisterName(2));
+    // TODO: mul and ashr would be better.
     auto *ResVal =
       Builder->CreateOr(NegVal, Op, assemblyRegisterName(1));
     emitStoreToSrcRegister(ResVal, &SI);
@@ -458,11 +462,13 @@ public:
     auto *Op = translateSrcOperandToTgt(ZI.getOperand(0), 1);
     emitStoreToSrcRegister(Op, &ZI);
   }
+  // TODO: urem would be better.
   void visitTruncInst(TruncInst &TI) {
     auto *Op = translateSrcOperandToTgt(TI.getOperand(0), 1);
-    uint64_t Mask = (1llu << (TI.getDestTy()->getIntegerBitWidth())) - 1;
+    uint64_t Divisor = (1llu << (TI.getDestTy()->getIntegerBitWidth()));
     emitStoreToSrcRegister(
-      Builder->CreateAnd(Op, Mask, assemblyRegisterName(1)),
+      Builder->CreateURem(Op, ConstantInt::get(I64Ty, Divisor), 
+                            assemblyRegisterName(1)),
       &TI);
   }
   void visitPtrToIntInst(PtrToIntInst &PI) {
@@ -526,11 +532,13 @@ public:
   }
   void visitSwitchInst(SwitchInst &SI) {
     // Emit phi's values first!
+    // TODO: why not like in visitBranchInst?
     for (unsigned i = 0, e = SI.getNumSuccessors(); i != e; ++i)
       processPHIsInSuccessor(SI.getSuccessor(i), SI.getParent());
 
     auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), 1);
     vector<pair<ConstantInt *, BasicBlock *>> TgtCases;
+    // TODO: auto
     for (SwitchInst::CaseIt I = SI.case_begin(), E = SI.case_end();
          I != E; ++I) {
       auto *C = ConstantInt::get(I64Ty, I->getCaseValue()->getZExtValue());
@@ -627,7 +635,7 @@ public:
   }
 };
 
-
+// TODO: remove Simple
 PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
   if (verifyModule(M, &errs(), nullptr))
     exit(1);

@@ -348,8 +348,6 @@ public:
         assemblyRegisterName(2) + "after_trunc__");
 
     Value *Res = nullptr;
-    // TODO: BO.getType() = Ty.
-    // TODO: BO.getOpcode() is repeated.
     if (Ty != I64Ty) {
       Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc,
                                  assemblyRegisterName(1) + "before_zext__");
@@ -447,7 +445,6 @@ public:
     // Get the sign bit.
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
     auto *Op = translateSrcOperandToTgt(SI.getOperand(0), 1);
-    // TODO: mul and ashr would be better.
     if (bw < 64) {
       Op =
         Builder->CreateMul(Op, ConstantInt::get(I64Ty, (1llu << (64 - bw))),
@@ -462,7 +459,6 @@ public:
     auto *Op = translateSrcOperandToTgt(ZI.getOperand(0), 1);
     emitStoreToSrcRegister(Op, &ZI);
   }
-  // TODO: urem would be better.
   void visitTruncInst(TruncInst &TI) {
     auto *Op = translateSrcOperandToTgt(TI.getOperand(0), 1);
     uint64_t Divisor = (1llu << (TI.getDestTy()->getIntegerBitWidth()));
@@ -532,15 +528,12 @@ public:
   }
   void visitSwitchInst(SwitchInst &SI) {
     // Emit phi's values first!
-    // TODO: why not like in visitBranchInst?
     for (unsigned i = 0, e = SI.getNumSuccessors(); i != e; ++i)
       processPHIsInSuccessor(SI.getSuccessor(i), SI.getParent());
 
     auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), 1);
     vector<pair<ConstantInt *, BasicBlock *>> TgtCases;
-    // TODO: auto
-    for (SwitchInst::CaseIt I = SI.case_begin(), E = SI.case_end();
-         I != E; ++I) {
+    for (auto I = SI.case_begin(), E = SI.case_end(); I != E; ++I) {
       auto *C = ConstantInt::get(I64Ty, I->getCaseValue()->getZExtValue());
       TgtCases.emplace_back(C, BBMap[I->getCaseSuccessor()]);
     }

@@ -185,6 +185,7 @@ private:
     FnBody.push_back(ss.str());
   }
 
+  // TODO: how can I avoid using this?
   void emitCopy(const string &DestReg, const string &val) {
     if (DestReg != val)
       emitAssembly(DestReg, "mul", {val, "1", "64"});
@@ -266,7 +267,7 @@ public:
 
   // Unsupported instruction goes here.
   void visitInstruction(Instruction &I) {
-    // Instructions that are eliminated by SimpleBackend:
+    // Instructions that are eliminated by Backend:
     // - phi
     // - sext
     raiseError(I);

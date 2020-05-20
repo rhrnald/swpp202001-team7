@@ -7,12 +7,12 @@
 #include "llvm/Support/raw_ostream.h"
 #include <string>
 
-class SimpleBackend : public llvm::PassInfoMixin<SimpleBackend> {
+class Backend : public llvm::PassInfoMixin<Backend> {
   std::string outputFile;
   bool printDepromotedModule;
 
 public:
-  SimpleBackend(std::string outputFile, bool printDepromotedModule) :
+  Backend(std::string outputFile, bool printDepromotedModule) :
       outputFile(outputFile), printDepromotedModule(printDepromotedModule) {}
   llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM);
 };

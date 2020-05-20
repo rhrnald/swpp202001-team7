@@ -629,7 +629,7 @@ public:
 };
 
 // TODO: remove Simple
-PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
+PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &FAM) {
   if (verifyModule(M, &errs(), nullptr))
     exit(1);
 

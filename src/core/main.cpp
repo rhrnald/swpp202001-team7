@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
   string s=optOutput;
 
   if(s=="") s="a.s";
-  MPM.addPass(SimpleBackend(s, false));
+  MPM.addPass(Backend(s, false));
   MPM.run(*M, MAM);
 
   if(ll!="") {

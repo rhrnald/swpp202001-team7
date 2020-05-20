@@ -447,15 +447,15 @@ public:
     // Get the sign bit.
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
     auto *Op = translateSrcOperandToTgt(SI.getOperand(0), 1);
-    auto *AndVal =
-      Builder->CreateAnd(Op, (1llu << (bw - 1)), assemblyRegisterName(2));
-    auto *NegVal =
-      Builder->CreateSub(ConstantInt::get(I64Ty, 0), AndVal,
-                         assemblyRegisterName(2));
     // TODO: mul and ashr would be better.
-    auto *ResVal =
-      Builder->CreateOr(NegVal, Op, assemblyRegisterName(1));
-    emitStoreToSrcRegister(ResVal, &SI);
+    if (bw < 64) {
+      Op =
+        Builder->CreateMul(Op, ConstantInt::get(I64Ty, (1llu << (64 - bw))),
+                          assemblyRegisterName(1));
+      Op =
+        Builder->CreateAShr(Op, 64 - bw, assemblyRegisterName(1));
+    }
+    emitStoreToSrcRegister(Op, &SI);
   }
   void visitZExtInst(ZExtInst &ZI) {
     // Everything is zero-extended by default.

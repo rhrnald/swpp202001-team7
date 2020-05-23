@@ -628,7 +628,6 @@ public:
   }
 };
 
-// TODO: remove Simple
 PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &FAM) {
   if (verifyModule(M, &errs(), nullptr))
     exit(1);

@@ -4,7 +4,7 @@
 uint64_t read();
 void write(uint64_t val);
 
-uint8_t *__alloca_bytes__(uint64_t size) {
+uint8_t *__alloca_bytes__(uint64_t size, uint64_t free_in_this_block, uint64_t align) {
   return (uint8_t *) malloc(size);
 }
 
@@ -17,7 +17,7 @@ void heavy_func(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 }
 
 int main() {
-  uint8_t *p = __alloca_bytes__(8);
+  uint8_t *p = __alloca_bytes__(8, 0);
   uint64_t r = read();
   for (int i=0; i<8; ++i) {
     p[i] = (uint8_t) r;

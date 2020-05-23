@@ -89,4 +89,4 @@ if o1 == o2:
                 + ' Return values are not same!')
 else:
     print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [WA] ', RED) \
-            + ': ' + color('Output values are not same!', RED))
+            + ': ' + colored('Output values are not same!', RED))

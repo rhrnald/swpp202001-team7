@@ -37,6 +37,14 @@ static cl::opt<string> optOutput(
 static cl::opt<string> optOutputLL(
     "d", cl::desc("Export LL file together"), cl::cat(optCategory), cl::init(""));
 
+//Add -except option for test.
+static cl::opt<string> exPassList(
+    "except", cl::desc("Passes not to included on building"), cl::cat(optCategory), cl::init(""));
+
+//Add -nopass option for test.
+static cl::opt<bool> noPass(
+    "nopass", cl::desc("add no pass to compiler"), cl::cat(optCategory), cl::init(false));
+
 //Usage removed because our own debug way had asserted.
 static cl::opt<bool> optPrintDepromotedModule(
     "print-depromoted-module", cl::desc("print depromoted module"),
@@ -56,6 +64,25 @@ static unique_ptr<Module> openInputFile(LLVMContext &Context,
   }
   ExitOnErr(M->materializeAll());
   return M;
+}
+
+void split(string &s, vector<string> &list) {
+  int prv=0;
+  int n=(int)s.size();
+  for(int i=0; i<n-1; i++) {
+    if(s[i]==',') {
+      list.push_back(s.substr(prv, i-prv-1));
+      prv=i+1;
+    }
+  }
+  list.push_back(s.substr(prv, n-prv));
+}
+
+bool excepted(const char* c , vector<string> &list) {
+  if(noPass) return true;
+  string s(c);
+  for(auto &e :list) if(e==s) return true;
+  return false;
 }
 
 int main(int argc, char **argv) {
@@ -83,23 +110,24 @@ int main(int argc, char **argv) {
   PB.registerLoopAnalyses(LAM);
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
+  vector<string> exceptList;
+  split(exPassList, exceptList);
 
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FunctionPassManager FPM;
-
   FPM.addPass(SROA());
   FPM.addPass(ADCEPass());
-  FPM.addPass(InstCombinePass());
-
-  FPM.addPass(RemoveUnsupportedOps());
+  
+  if(!excepted("InstCombinePass", exceptList)) FPM.addPass(InstCombinePass());
+  if(!excepted("RemoveUnsupportedOps", exceptList)) FPM.addPass(RemoveUnsupportedOps());
 
   // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));  
 
-  MPM.addPass(CheckConstExpr());
-  MPM.addPass(PackRegisters());
-  MPM.addPass(WeirdArithmetic());
+  if(!excepted("CheckConstExpr", exceptList)) MPM.addPass(CheckConstExpr());
+  if(!excepted("PackRegisters", exceptList)) MPM.addPass(PackRegisters());
+  if(!excepted("WeirdArithmetic", exceptList)) MPM.addPass(WeirdArithmetic());
 
   // Run!
   string ll=optOutputLL;

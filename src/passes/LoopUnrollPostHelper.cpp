@@ -25,54 +25,81 @@ PreservedAnalyses LoopUnrollPostHelper::run(Module &M, ModuleAnalysisManager &MA
     FunctionMap[F.getName()] = &F;
   }
   bool SkipOne = false, Ended = false;
-  string FnName;
+  string FnName = "";
   Function *FnParse = NULL;
-  vector<pair<vector<Instruction *>, Instruction*>> Replacements;
-  vector<Instruction *> Consecutives;
+  vector<tuple<vector<Instruction *>, Instruction*, Instruction*>> Replacements;
+  vector<Instruction *> Consecutives, Deletes;
   CallInst *NewCall = NULL;
+  Instruction *Caller = NULL;
   Value *X, *Y;
   vector<Value *> Args;
+  map<Function*, Instruction*> DummyMap;
   unsigned ArgNum = 0;
-  for (auto &F : M) for (auto &BB : F) for (auto &I : BB) {
-    if (FnParse) Consecutives.push_back(&I);
-    if (SkipOne) {
-      if (Ended) {
-        Ended = false, FnParse = NULL;
-      }
-      SkipOne = false; continue;
-    }
-    if (!FnParse) {
-      if ((FnName = getParse(I.getName(), PREFIX_OF_START, SUFFIX)) != "") {
-        FnParse = FunctionMap[FnName];
-        SkipOne = true, ArgNum = 0;
-      }
-    } else {
-      if (ArgNum < FnParse->arg_size()) {
-        if (StoreInst *S = dyn_cast<StoreInst>(&I)) {
-          X = S->getOperand(0);
-        } else if (ZExtInst *Z = dyn_cast<ZExtInst>(&I)) {
-          X = Z->getOperand(0);
-          SkipOne = true;
-        } else if (PtrToIntInst *P = dyn_cast<PtrToIntInst>(&I)) {
-          X = P->getOperand(0);
-          SkipOne = true;
+  for (auto &F : M) {
+    if ((!isa<Function>(F)) || F.isDeclaration()) continue;
+    for (auto &BB : F) for (auto &I : BB) {
+      if (I.getName().find(PREFIX_OF_DUMMY) != StringRef::npos) DummyMap[&F] = &I;
+      if (FnParse) Consecutives.push_back(&I);
+      if (SkipOne) {
+        if (Ended) {
+          Replacements.emplace_back(Consecutives, Caller, NewCall);
+          Consecutives.clear();
+          Ended = false, FnParse = NULL, FnName = "", ArgNum = 0, NewCall = NULL, Caller = NULL, X = Y = NULL;
         }
-        Args.push_back(X);
+        SkipOne = false; continue;
+      }
+      if (!FnParse) {
+        if ((FnName = getParse(I.getName(), PREFIX_OF_START, SUFFIX)) != "") {
+          FnParse = FunctionMap[FnName];
+          SkipOne = true, ArgNum = 0;
+        }
       } else {
-        if (!Ended) {
-          NewCall = CallInst::Create(FnParse->getFunctionType(), FnParse, Args, FnName);
-          if (FnParse->getReturnType() != Type::getVoidTy(Context)) {
-            I.replaceAllUsesWith(NewCall);
+        if (ArgNum++ < FnParse->arg_size()) {
+          if (StoreInst *S = dyn_cast<StoreInst>(&I)) {
+            X = S->getOperand(0);
+          } else if (ZExtInst *Z = dyn_cast<ZExtInst>(&I)) {
+            X = Z->getOperand(0);
+            SkipOne = true;
+          } else if (PtrToIntInst *P = dyn_cast<PtrToIntInst>(&I)) {
+            X = P->getOperand(0);
+            SkipOne = true;
           }
-          vector<Value *> Empty; std::swap(Args, Empty);
-          Ended = true;
+          Args.push_back(X);
         } else {
-          if ((FnName = getParse(I.getName(), PREFIX_OF_START, SUFFIX)) != "") {
+          if (!Ended) {
+            NewCall = CallInst::Create(FnParse->getFunctionType(), FnParse, Args, "", &I);
+            if (NewCall->getType() != Type::getVoidTy(Context)) {
+              NewCall->setName("newcall");
+              Caller = &I;
+            } else {
+              SkipOne = true;
+            }
+            Args.clear();
+            Ended = true;
+          } else {
             SkipOne = true;
           }
         }
       }
     }
   }
+
+  for (auto &[C, CR, NCI] : Replacements) {
+    if (CR) CR->replaceAllUsesWith(NCI);
+    for (auto &I : C) Deletes.push_back(I);
+  }
+
+  reverse(Deletes.begin(), Deletes.end());
+
+  for (auto &I : Deletes) I->eraseFromParent();
+
+  for (auto &[_, D] : DummyMap) {
+    for (auto &U : D->uses()) {
+      User *Usr = U.getUser();
+      if (Instruction *UsrI = dyn_cast<Instruction>(Usr)) UsrI->eraseFromParent();
+    }
+    D->eraseFromParent();
+  }
+
   return PreservedAnalyses::all();
 }

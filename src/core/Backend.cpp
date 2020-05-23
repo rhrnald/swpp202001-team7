@@ -503,7 +503,7 @@ public:
     unsigned Idx = 1;
     for (auto I = CI.arg_begin(), E = CI.arg_end(); I != E; ++I) {
       Args.emplace_back(translateSrcOperandToTgt(*I, Idx));
-      ++Idx;
+      if(!isa<Constant>(&*I)) ++Idx;  // constants don't need registers
     }
     if (CI.hasName()) {
       Value *Res = Builder->CreateCall(CalledFInTgt, Args,

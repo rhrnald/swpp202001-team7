@@ -421,7 +421,9 @@ public:
       assert(CurrentSP == RefSP && "spill_ref should be called after set_ref.");
       assert(!RefSpilled && "the reference sp is already spilled.");
       emitAssembly(";", {"spill ref sp - step 1"});
-      emitAssembly("store", {"8", RefSP, "sp", "-8"});
+      emitAssembly("sp", "sub", {"sp", "8", "64"});
+      emitAssembly("store", {"8", RefSP, "sp", "0"});
+      emitAssembly("sp", "add", {"sp", "8", "64"});
       RefSpilled = true;
       return;
     }
@@ -463,6 +465,7 @@ public:
       emitAssembly(";", {"spill ref sp - step 3"});
       emitAssembly(RefSP, "load", {"8", "sp", "0"});
       emitAssembly("sp", "add", {"sp", "8", "64"});
+      RefSpilled = false;
     }
   }
 

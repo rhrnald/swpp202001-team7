@@ -209,6 +209,8 @@ public:
     assert(FuncMap.count(&F));
     FuncToEmit = FuncMap[&F];
 
+    RefSet = false;
+
     // Fill source argument -> target argument map.
     for (unsigned i = 0, e = F.arg_size(); i < e; ++i) {
       auto *Arg = FuncToEmit->getArg(i);
@@ -656,7 +658,7 @@ public:
       if (auto CI = dyn_cast<CallInst>(&I)) {
         Function *CalledFn = CI->getCalledFunction();
         if (!ABFound && CalledFn->getName() == AllocaBytesName) {
-          CallInst::Create(RefFTy, SetRefFn, SetRefName)->insertBefore(CI);
+          CallInst::Create(RefFTy, SetRefFn)->insertBefore(CI);
           ABFound = true;
         }
         else if (ABFound && CI->arg_size() == 16) {
@@ -668,7 +670,7 @@ public:
             }
           }
           if (NoConstant) {
-            CallInst::Create(RefFTy, SpillRefFn, SpillRefName)->insertBefore(CI);
+            CallInst::Create(RefFTy, SpillRefFn)->insertBefore(CI);
           }
         }
       }

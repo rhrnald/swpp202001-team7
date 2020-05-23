@@ -159,8 +159,12 @@ public:
 
 class AssemblyEmitterImpl : public InstVisitor<AssemblyEmitterImpl> {
 public:
+  const string RefSP = "r16";
+
   vector<string> FnBody;
   StackFrame CurrentStackFrame;
+  bool RefSpilled;
+  string CurrentSP;
 
 private:
   // ----- Emit functions -----
@@ -258,6 +262,8 @@ public:
   void visitFunction(Function &F) {
     CurrentStackFrame = StackFrame();
     FnBody.clear();
+    RefSpilled = false;
+    CurrentSP = "sp";
   }
 
   void visitBasicBlock(BasicBlock &BB) {
@@ -283,7 +289,7 @@ public:
       //   r1 = add sp ofs
       unsigned ofs = CurrentStackFrame.getStackOffset(&I);
       string DestReg = getRegisterNameFromInstruction(&I, false);
-      emitAssembly(DestReg, "add", {"sp", std::to_string(ofs), "64"});
+      emitAssembly(DestReg, "add", {CurrentSP, std::to_string(ofs), "64"});
     }
   }
   void visitLoadInst(LoadInst &LI) {
@@ -293,7 +299,7 @@ public:
 
     if (StackOffset != -1)
       // load stack
-      emitAssembly(Dest, "load", {sz, "sp", std::to_string(StackOffset)});
+      emitAssembly(Dest, "load", {sz, CurrentSP, std::to_string(StackOffset)});
     else
       emitAssembly(Dest, "load", {sz, PtrOp, "0"});
   }
@@ -303,7 +309,7 @@ public:
     string sz = getAccessSizeInStr(SI.getValueOperand()->getType());
 
     if (StackOffset != -1)
-      emitAssembly("store", {sz, ValOp, "sp", std::to_string(StackOffset)});
+      emitAssembly("store", {sz, ValOp, CurrentSP, std::to_string(StackOffset)});
     else
       emitAssembly("store", {sz, ValOp, PtrOp, "0"});
   }
@@ -404,6 +410,33 @@ public:
   // ---- Call ----
   void visitCallInst(CallInst &CI) {
     string FnName = (string)CI.getCalledFunction()->getName();
+    if (FnName == SetRefName) {
+      assert(CurrentSP == "sp" && "set_ref will be called only once.");
+      emitAssembly(";", {"set ref sp"});
+      emitAssembly(RefSP, "mul", {"sp", "1", "64"});
+      CurrentSP = RefSP;
+      return;
+    }
+    if (FnName == SpillRefName) {
+      assert(CurrentSP == RefSP && "spill_ref should be called after set_ref.");
+      assert(!RefSpilled && "the reference sp is already spilled.");
+      emitAssembly(";", {"spill ref sp - step 1"});
+      emitAssembly("store", {"8", RefSP, "sp", "-8"});
+      RefSpilled = true;
+      return;
+    }
+    if (FnName == AllocaBytesName) {
+      if (CI.hasName()) {
+        assert(CurrentSP == RefSP && "set_ref should be called before alloca_bytes.");
+        string DestReg = getRegisterNameFromInstruction(&CI, false);
+        string Size = getOperand(*CI.arg_begin()).first;
+        emitAssembly(";", {AllocaBytesName});
+        emitAssembly("sp", "sub", {"sp", Size, "64"});
+        emitAssembly(DestReg, "mul", {"sp", "1", "64"});
+      }
+      return;
+    }
+
     vector<string> Args;
     bool MallocOrFree = true;
     if (FnName != "malloc" && FnName != "free") {
@@ -416,11 +449,20 @@ public:
       Args.emplace_back(getOperand(*I).first);
       ++Idx;
     }
+    if (RefSpilled) {
+      emitAssembly(";", {"spill ref sp - step 2"});
+      emitAssembly("sp", "sub", {"sp", "8", "64"});
+    }
     if (CI.hasName()) {
       string DestReg = getRegisterNameFromInstruction(&CI, false);
       emitAssembly(DestReg, MallocOrFree ? FnName : "call", Args);
     } else {
       emitAssembly(MallocOrFree ? FnName : "call", Args);
+    }
+    if (RefSpilled) {
+      emitAssembly(";", {"spill ref sp - step 3"});
+      emitAssembly(RefSP, "load", {"8", "sp", "0"});
+      emitAssembly("sp", "add", {"sp", "8", "64"});
     }
   }
 

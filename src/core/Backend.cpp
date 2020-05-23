@@ -643,36 +643,62 @@ public:
 
 class AllocaBytesHandler : public InstVisitor<AllocaBytesHandler> {
 private:
-  FunctionType *RefFTy;
-  Function *SetRefFn, *SpillRefFn;
+  Function *SetRefFn, *SpillRefFn, *FreeBytesFn;
 public:
   AllocaBytesHandler(Module &M) {
-    RefFTy = FunctionType::get(Type::getVoidTy(M.getContext()), false);
+    auto RefFTy = FunctionType::get(Type::getVoidTy(M.getContext()), false);
     SetRefFn = Function::Create(RefFTy, Function::ExternalLinkage, SetRefName, M);
     SpillRefFn = Function::Create(RefFTy, Function::ExternalLinkage, SpillRefName, M);
+    FreeBytesFn = Function::Create(FunctionType::get(Type::getVoidTy(M.getContext()),
+                                    {Type::getInt64Ty(M.getContext())}, false), 
+                                    Function::ExternalLinkage, FreeBytesName, M);
   }
 
   void visitFunction(Function &F) {
     bool ABFound = false;
-    for (auto &BB : F) for (auto &I : BB) {
-      if (auto CI = dyn_cast<CallInst>(&I)) {
-        Function *CalledFn = CI->getCalledFunction();
-        if (!ABFound && CalledFn->getName() == AllocaBytesName) {
-          CallInst::Create(RefFTy, SetRefFn)->insertBefore(CI);
-          ABFound = true;
-        }
-        else if (ABFound && CI->arg_size() == 16) {
-          bool NoConstant = true;
-          for (auto i = CI->arg_begin(), e = CI->arg_end(); i != e; ++i) {
-            if (isa<Constant>(&*i)) {
-              NoConstant = false;
-              break;
+    for (auto &BB : F) {
+      bool FreeInThisBlock = true;
+      stack<Value *> SizeVector;
+      for (auto &I : BB) {
+        if (auto CI = dyn_cast<CallInst>(&I)) {
+          Function *CalledFn = CI->getCalledFunction();
+          if (CalledFn->getName() == AllocaBytesName) {
+            if (!ABFound) {
+              CallInst::Create(SetRefFn)->insertBefore(CI);
+              ABFound = true;
+            }
+            if (FreeInThisBlock) {
+              ConstantInt *FITB;
+              assert((FITB = dyn_cast<ConstantInt>(CI->getArgOperand(1))) &&
+                     "free_in_this_block should be constant!");
+              if (FITB->isZero()) FreeInThisBlock = false;
+              else {
+                SizeVector.push(CI->getArgOperand(0));
+              }
             }
           }
-          if (NoConstant) {
-            CallInst::Create(RefFTy, SpillRefFn)->insertBefore(CI);
+          else if (ABFound && CI->arg_size() == 16) {
+            bool NoConstant = true;
+            for (auto i = CI->arg_begin(), e = CI->arg_end(); i != e; ++i) {
+              if (isa<Constant>(&*i)) {
+                NoConstant = false;
+                break;
+              }
+            }
+            if (NoConstant) {
+              CallInst::Create(SpillRefFn)->insertBefore(CI);
+            }
           }
         }
+      }
+      if (FreeInThisBlock && !SizeVector.empty()) {
+        Value *Size = SizeVector.top();
+        SizeVector.pop();
+        while (!SizeVector.empty()) {
+          Size = BinaryOperator::CreateNUWAdd(Size, SizeVector.top(), "free_size");
+          SizeVector.pop();
+        }
+        CallInst::Create(FreeBytesFn, {Size})->insertBefore(&*BB.rbegin());
       }
     }
   }

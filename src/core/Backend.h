@@ -8,6 +8,7 @@
 #include <string>
 
 const std::string AllocaBytesName = "__alloca_bytes__";
+const std::string FreeBytesName = "__free_bytes__";
 const std::string SetRefName = "__set_ref__";
 const std::string SpillRefName = "__spill_ref__";
 

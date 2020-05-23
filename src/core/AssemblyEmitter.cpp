@@ -163,6 +163,7 @@ public:
 
   vector<string> FnBody;
   StackFrame CurrentStackFrame;
+
   bool RefSpilled;
   string CurrentSP;
 
@@ -432,10 +433,16 @@ public:
         assert(CurrentSP == RefSP && "set_ref should be called before alloca_bytes.");
         string DestReg = getRegisterNameFromInstruction(&CI, false);
         string Size = getOperand(*CI.arg_begin()).first;
-        emitAssembly(";", {AllocaBytesName});
+        emitAssembly(";", {AllocaBytesName, Size});
         emitAssembly("sp", "sub", {"sp", Size, "64"});
         emitAssembly(DestReg, "mul", {"sp", "1", "64"});
       }
+      return;
+    }
+    if (FnName == FreeBytesName) {
+      string Size = getOperand(*CI.arg_begin()).first;
+      emitAssembly(";", {FreeBytesName, Size});
+      emitAssembly("sp", "add", {"sp", Size, "64"});
       return;
     }
 

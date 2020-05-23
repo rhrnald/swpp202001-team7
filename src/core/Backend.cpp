@@ -50,6 +50,8 @@ private:
   map<Instruction *, AllocaInst *> RegToAllocaMap;
   map<PHINode *, AllocaInst *> PhiToTempAllocaMap;
 
+  bool RefSet;  // a flag indicates whether the reference sp is set
+
   void raiseError(Instruction &I) {
     errs() << "DepromoteRegisters: Unsupported Instruction: " << I << "\n";
     abort();
@@ -486,6 +488,15 @@ public:
     assert(FuncMap.count(CalledF));
     auto *CalledFInTgt = FuncMap[CalledF];
 
+    if (!RefSet && CalledF->getName() == SetRefName) {
+      RefSet = true;
+      // Now the reference sp is set. Prepare for it!
+    }
+    else if (RefSet && CalledF->getName() == SpillRefName) {
+      // The reference sp is spilled for the moment. Enjoy!
+      // However, don't forget that RefSet is still true!
+    }
+
     SmallVector<Value *, 16> Args;
     unsigned Idx = 1;
     for (auto I = CI.arg_begin(), E = CI.arg_end(); I != E; ++I) {
@@ -628,7 +639,44 @@ public:
   }
 };
 
-PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &FAM) {
+class AllocaBytesHandler : public InstVisitor<AllocaBytesHandler> {
+private:
+  FunctionType *RefFTy;
+  Function *SetRefFn, *SpillRefFn;
+public:
+  AllocaBytesHandler(Module &M) {
+    RefFTy = FunctionType::get(Type::getVoidTy(M.getContext()), false);
+    SetRefFn = Function::Create(RefFTy, Function::ExternalLinkage, SetRefName, M);
+    SpillRefFn = Function::Create(RefFTy, Function::ExternalLinkage, SpillRefName, M);
+  }
+
+  void visitFunction(Function &F) {
+    bool ABFound = false;
+    for (auto &BB : F) for (auto &I : BB) {
+      if (auto CI = dyn_cast<CallInst>(&I)) {
+        Function *CalledFn = CI->getCalledFunction();
+        if (!ABFound && CalledFn->getName() == AllocaBytesName) {
+          CallInst::Create(RefFTy, SetRefFn, SetRefName)->insertBefore(CI);
+          ABFound = true;
+        }
+        else if (ABFound && CI->arg_size() == 16) {
+          bool NoConstant = true;
+          for (auto i = CI->arg_begin(), e = CI->arg_end(); i != e; ++i) {
+            if (isa<Constant>(&*i)) {
+              NoConstant = false;
+              break;
+            }
+          }
+          if (NoConstant) {
+            CallInst::Create(RefFTy, SpillRefFn, SpillRefName)->insertBefore(CI);
+          }
+        }
+      }
+    }
+  }
+};
+
+PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   if (verifyModule(M, &errs(), nullptr))
     exit(1);
 
@@ -639,6 +687,10 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &FAM) {
   // Second, convert known constant expressions to instructions.
   ConstExprToInsts CEI;
   CEI.visit(M);
+
+  // Second and half, handle AllocaBytes
+  AllocaBytesHandler ABH(M);
+  ABH.visit(M);
 
   // Third, depromote registers to alloca & canonicalize iN types into i64.
   DepromoteRegisters Deprom;

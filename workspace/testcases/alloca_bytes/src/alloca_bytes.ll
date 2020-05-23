@@ -4,7 +4,7 @@ target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16
 target triple = "x86_64-apple-macosx10.15.0"
 
 ; Function Attrs: nounwind ssp uwtable
-define i8* @__alloca_bytes__(i64 %size) #0 {
+define i8* @__alloca_bytes__(i64 %size, i64 %free_in_this_block) #0 {
 entry:
   %call = call i8* @malloc(i64 %size) #4
   ret i8* %call
@@ -40,7 +40,7 @@ declare void @write(i64) #2
 ; Function Attrs: nounwind ssp uwtable
 define i32 @main() #0 {
 entry:
-  %call = call i8* @__alloca_bytes__(i64 8)
+  %call = call i8* @__alloca_bytes__(i64 8, i64 0)
   %call1 = call i64 (...) @read()
   br label %for.cond
 

@@ -1,6 +1,6 @@
 
 ; Function __alloca_bytes__
-start __alloca_bytes__ 1:
+start __alloca_bytes__ 2:
   .entry:
     ; init sp!
     sp = sub sp 8 64
@@ -69,7 +69,7 @@ start main 0:
   .entry:
     ; init sp!
     sp = sub sp 440 64
-    r1 = call __alloca_bytes__ 8
+    r1 = call __alloca_bytes__ 8 0
     store 8 r1 sp 0
     r1 = call read
     store 8 r1 sp 8

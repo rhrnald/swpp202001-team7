@@ -58,7 +58,11 @@ PreservedAnalyses LoopUnrollPreHelper::run(Module &M, ModuleAnalysisManager &MAM
             GeneratePad(Dummy, A, ToInsert, PREFIX_OF_ARG);
           }
           if (CF->getReturnType() != Type::getVoidTy(Context)) {
-            //GenerateAdhoc2(Dummy, CI, ToInsert);
+            if (CI->getType()->isPointerTy())
+              ToInsert.push_back(new IntToPtrInst(ConstantInt::get(i64Ty, 1ULL), CI->getType(), PREFIX_OF_RETURN + CI->getName() + SUFFIX));
+            else
+              ToInsert.push_back(new PtrToIntInst(Dummy, CI->getType(), PREFIX_OF_RETURN + CI->getName() + SUFFIX));
+            CI->replaceAllUsesWith(ToInsert.back());
           }
           ToInsert.push_back(new PtrToIntInst(Dummy, i64Ty, PREFIX_OF_END + FnName + SUFFIX));
           ToInsert.push_back(new StoreInst(ToInsert.back(), Dummy));

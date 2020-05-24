@@ -17,9 +17,11 @@ declare i8* @malloc(i64) #1
 define i32 @main() #0 {
 entry:
   %call = call i64 (...) @read()
+  %call1 = call i8* @__alloca_bytes__(i64 8, i64 0, i64 0)
   br label %for.cond
 
 for.cond:                                         ; preds = %for.inc, %entry
+  %s.0 = phi i8 [ 0, %entry ], [ %conv8, %for.inc ]
   %i.0 = phi i32 [ 0, %entry ], [ %inc, %for.inc ]
   %r.0 = phi i64 [ %call, %entry ], [ %shr, %for.inc ]
   %cmp = icmp slt i32 %i.0, 8
@@ -32,13 +34,18 @@ for.body:                                         ; preds = %for.cond
   %add = add nsw i32 %i.0, 1
   %mul = mul nsw i32 %add, 8
   %conv = sext i32 %mul to i64
-  %call1 = call i8* @__alloca_bytes__(i64 %conv, i64 1, i64 0)
-  %conv2 = trunc i64 %r.0 to i8
-  store i8 %conv2, i8* %call1, align 1
+  %call2 = call i8* @__alloca_bytes__(i64 %conv, i64 1, i64 0)
+  %conv3 = trunc i64 %r.0 to i8
+  store i8 %conv3, i8* %call2, align 1
   %shr = lshr i64 %r.0, 8
-  %tmp = load i8, i8* %call1, align 1
-  %conv3 = zext i8 %tmp to i64
-  call void @write(i64 %conv3)
+  %tmp = load i8, i8* %call2, align 1
+  %conv4 = zext i8 %tmp to i64
+  call void @write(i64 %conv4)
+  %tmp12 = load i8, i8* %call2, align 1
+  %conv5 = zext i8 %tmp12 to i32
+  %conv6 = zext i8 %s.0 to i32
+  %add7 = add nsw i32 %conv6, %conv5
+  %conv8 = trunc i32 %add7 to i8
   br label %for.inc
 
 for.inc:                                          ; preds = %for.body
@@ -46,6 +53,10 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond.cleanup
+  store i8 %s.0, i8* %call1, align 1
+  %tmp13 = load i8, i8* %call1, align 1
+  %conv9 = zext i8 %tmp13 to i64
+  call void @write(i64 %conv9)
   ret i32 0
 }
 

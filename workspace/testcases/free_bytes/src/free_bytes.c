@@ -12,11 +12,16 @@ void __free_bytes__(uint64_t size);
 
 int main() {
   uint64_t r = read();
+  uint8_t *p_out = __alloca_bytes__(8, 0, 8);
+  uint8_t s = 0;
   for (int i=0; i<8; ++i) {
-    uint8_t *p = __alloca_bytes__((i+1) * 8, 1, 0);
+    uint8_t *p = __alloca_bytes__((i+1) * 8, 1, 8);
     *p = (uint8_t) r;
     r >>= 8;
     write(*p);
+    s += *p;
   }
+  *p_out = s;
+  write(*p_out);
   return 0;
 }

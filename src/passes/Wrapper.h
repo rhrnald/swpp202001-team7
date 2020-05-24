@@ -2,5 +2,4 @@
 #include "WeirdArithmetic.h"
 #include "CheckConstExpr.h"
 #include "RemoveUnsupportedOps.h"
-#include "LoopUnrollPreHelper.h"
-#include "LoopUnrollPostHelper.h"
+#include "LoopUnrollHelper.h"

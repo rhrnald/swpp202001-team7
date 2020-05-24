@@ -90,7 +90,6 @@ public:
     
     ActiveSet.erase(Victim);
     FreeRegisters.push(VictimId);
-    outs() << "Register " << VictimId << " is freed. (" << FreeRegisters.size() << " left)\n";
     return VictimRequester;
   }
 

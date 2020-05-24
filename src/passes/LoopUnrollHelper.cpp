@@ -1,76 +1,55 @@
 #include "LoopUnrollHelper.h"
 
-#include "llvm/IR/PassManager.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-
 using namespace llvm;
 using namespace std;
 
 const string PREFIX_OF_DUMMY = "$dummy$", PREFIX_OF_START = "$fnstart$";
 const string PREFIX_OF_RETURN = "$fnreturn$", PREFIX_OF_END = "$fnend$";
 const string PREFIX_OF_ARG = "$fnarg$", SUFFIX = "$dot$";
-
-bool LoopUnrollPreHelper::getCompatibleWithUnroll(Function *F) {
-  if (CompatibleWithUnroll.count(F)) return CompatibleWithUnroll[F];
-  bool &ret = CompatibleWithUnroll[F] = false;
-  StringRef FnName = F->getName();
-  ret |= (FnName == "read" || FnName == "write" || FnName == "malloc" || FnName == "free");
-  return ret;
-}
-
-void LoopUnrollPreHelper::GeneratePad(AllocaInst *Dummy, Value *V, vector<Instruction*> &ToInsert, string prefix) {
-  if (V->getType()->isPointerTy()) {
-    ToInsert.push_back(new PtrToIntInst(V, i64Ty, prefix));
-    ToInsert.push_back(new StoreInst(ToInsert.back(), Dummy));
-  } else {
-    if (V->getType() != i64Ty) {
-      ToInsert.push_back(new ZExtInst(V, i64Ty, prefix));
-      ToInsert.push_back(new StoreInst(ToInsert.back(), Dummy));
-    } else {
-      ToInsert.push_back(new StoreInst(V, Dummy));
-    }
-  }
-}
+const string SYSWRAP = "$sysfnwrap$", OPERAND = "$operand$", RETURN = "$return$", DUMMY = "$dummy$";
 
 PreservedAnalyses LoopUnrollPreHelper::run(Module &M, ModuleAnalysisManager &MAM) {
   LLVMContext &Context = M.getContext();
-  i64Ty = Type::getInt64Ty(Context), i64PtrTy = Type::getInt64PtrTy(Context);
+  i64Ty = Type::getInt64Ty(Context);
+  i8PtrTy = Type::getInt8PtrTy(Context), i64PtrTy = Type::getInt64PtrTy(Context);
+  int cnt = 0;
 
   vector<Instruction*> ToErased;
   for (auto &F : M) {
     if (!isa<Function>(F) || F.isDeclaration()) continue;
-    AllocaInst *Dummy = new AllocaInst(i64Ty, 0, PREFIX_OF_DUMMY);
-    F.getEntryBlock().getInstList().push_front(Dummy);
     for (auto &BB : F) {
       auto &IL = BB.getInstList();
       for (auto &I : BB) { 
         if (CallInst *CI = dyn_cast<CallInst>(&I)) {
           Function *CF = CI->getCalledFunction();
-          if (!getCompatibleWithUnroll(CF)) continue;
-          StringRef FnName = CF->getName();
+          string FnName = CF->getName().str();
           vector<Instruction *> ToInsert;
 
-          ToInsert.push_back(new PtrToIntInst(Dummy, i64Ty, PREFIX_OF_START + FnName + SUFFIX));
-          ToInsert.push_back(new StoreInst(ToInsert.back(), Dummy));
-          for (auto &A : CI->args()) {
-            GeneratePad(Dummy, A, ToInsert, PREFIX_OF_ARG);
-          }
-          if (CF->getReturnType() != Type::getVoidTy(Context)) {
-            if (CI->getType()->isPointerTy())
-              ToInsert.push_back(new IntToPtrInst(ConstantInt::get(i64Ty, 1ULL), CI->getType(), PREFIX_OF_RETURN + CI->getName() + SUFFIX));
-            else
-              ToInsert.push_back(new PtrToIntInst(Dummy, CI->getType(), PREFIX_OF_RETURN + CI->getName() + SUFFIX));
-            CI->replaceAllUsesWith(ToInsert.back());
-          }
-          ToInsert.push_back(new PtrToIntInst(Dummy, i64Ty, PREFIX_OF_END + FnName + SUFFIX));
-          ToInsert.push_back(new StoreInst(ToInsert.back(), Dummy));
+          string OpName = SYSWRAP + to_string(cnt) + "$" + FnName + OPERAND;
+          string RetName = SYSWRAP + to_string(cnt) + "$" + FnName + RETURN;
+          AllocaInst *Dummy = new AllocaInst(i64Ty, 0, SYSWRAP + to_string(cnt) + "$" + FnName + DUMMY);
+          F.getEntryBlock().getInstList().push_front(Dummy);
 
-          Instruction *Last = CI;
-          for (auto &NewInst : ToInsert) {
-            IL.insertAfter(Last->getIterator(), NewInst);
-            Last = NewInst;
+          if (FnName == "write") {
+            ToInsert.push_back(BinaryOperator::CreateAdd(CI->getArgOperand(0), ConstantInt::get(i64Ty, 1), OpName));
+            ToInsert.push_back(new StoreInst(ToInsert.back(), Dummy));
+          } else if (FnName == "read") {
+            ToInsert.push_back(new PtrToIntInst(Dummy, i64Ty, RetName));
+            CI->replaceAllUsesWith(ToInsert.back());
+          } else if (FnName == "free") {
+            ToInsert.push_back(new PtrToIntInst(CI->getArgOperand(0), i64Ty, OpName));
+            ToInsert.push_back(new StoreInst(ToInsert.back(), Dummy));
+          } else if (FnName == "malloc") {
+            ToInsert.push_back(new PtrToIntInst(Dummy, i64Ty, "meaningless"));
+            ToInsert.push_back(BinaryOperator::CreateAdd(CI->getArgOperand(0), ToInsert.back(), OpName));
+            ToInsert.push_back(new IntToPtrInst(ToInsert.back(), i8PtrTy, RetName));
+            CI->replaceAllUsesWith(ToInsert.back());
+          } else {
+              continue;
           }
+          cnt++;
+          Instruction *Last = CI;
+          for (auto &NewInst : ToInsert) IL.insertAfter(Last->getIterator(), NewInst), Last = NewInst;
           ToErased.push_back(CI);
         }
       }
@@ -80,93 +59,91 @@ PreservedAnalyses LoopUnrollPreHelper::run(Module &M, ModuleAnalysisManager &MAM
   return PreservedAnalyses::all();
 }
 
-static string getParse(string target, string prefix, string postfix) {
-  if (target.size() < prefix.size() + postfix.size()) return "";
-  if (target.substr(0, prefix.size()) != prefix) return "";
-  uint64_t i = target.find(postfix);
-  return i == string::npos? "" : target.substr(prefix.size(), i - prefix.size());
+static tuple<string,string,string,int> Parse(string target) {
+  if (target.find(SYSWRAP) == string::npos || 
+       (target.find(OPERAND) == string::npos && target.find(RETURN) == string::npos && target.find(DUMMY) == string::npos))
+    return {"", "", "", -1};
+  vector<int> pos;
+  for (int i = 0; i < (int) target.size(); i++)
+    if (target[i] == '$') pos.push_back(i);
+  return {target.substr(0, pos[3]) + target.substr(pos[4]), target.substr(pos[2]+1, pos[3]-pos[2]-1),
+          target.substr(pos[3], pos[4]-pos[3]+1), atoi(target.substr(pos[1]+1, pos[2]-pos[1]- 1).c_str())};
+}
+
+static string GetVariant(string identifier, string vartype) {
+  return identifier.substr(0, identifier.size()-1) + vartype;
 }
 
 PreservedAnalyses LoopUnrollPostHelper::run(Module &M, ModuleAnalysisManager &MAM) {
   LLVMContext &Context = M.getContext();
   for (auto &F : M) {
-    if (!isa<Function>(F)) continue;
-    FunctionMap[F.getName()] = &F;
+    if (isa<Function>(F)) {
+      FunctionMap[F.getName()] = &F;
+      if (F.isDeclaration()) continue;
+      for (auto &BB : F) for (auto &I : BB) {
+        if (I.getName() != "") InstMap[I.getName()] = &I;
+      }
+    }
   }
-  bool SkipOne = false, Ended = false;
-  string FnName = "";
-  Function *FnParse = NULL;
-  vector<tuple<vector<Instruction *>, Instruction*, Instruction*>> Replacements;
-  vector<Instruction *> Consecutives, Deletes;
-  CallInst *NewCall = NULL;
-  Instruction *Caller = NULL;
-  Value *X, *Y;
-  vector<Value *> Args;
+
   map<Function*, Instruction*> DummyMap;
+  bool SkipOne = false, Ended = false;
+  Function *Callee = NULL;
+  vector<Instruction *> ParsedConsecutives, ToErased;
+  CallInst *NewCaller = NULL;
+  Instruction *PrevCaller = NULL;
+  vector<tuple<vector<Instruction *>, Instruction*, Instruction*>> Replacements;
+  vector<Value *> Args;
   unsigned ArgNum = 0;
+
+  vector<Instruction*> Dummies;
+  
   for (auto &F : M) {
     if ((!isa<Function>(F)) || F.isDeclaration()) continue;
     for (auto &BB : F) for (auto &I : BB) {
-      if (I.getName().find(PREFIX_OF_DUMMY) != StringRef::npos) DummyMap[&F] = &I;
-      if (FnParse) Consecutives.push_back(&I);
-      if (SkipOne) {
-        if (Ended) {
-          Replacements.emplace_back(Consecutives, Caller, NewCall);
-          Consecutives.clear();
-          Ended = false, FnParse = NULL, FnName = "", ArgNum = 0, NewCall = NULL, Caller = NULL, X = Y = NULL;
+      string InstName = I.getName().str();
+      auto [Identifier, FnName, Variant, Cnt] = Parse(InstName);
+      if (Cnt == -1) continue;
+
+      Callee = FunctionMap[FnName];
+
+      if (Variant == DUMMY) {
+        Dummies.push_back(&I);
+      } else if (Variant == RETURN) {
+        if (FnName == "read") {
+          NewCaller = CallInst::Create(Callee->getFunctionType(), Callee, Args, "newread", &I);
+          I.replaceAllUsesWith(NewCaller);
+          ToErased.push_back(&I);
+        } else if (FnName == "malloc") {
+          Instruction *OperandInst = InstMap[GetVariant(Identifier, OPERAND)];
+          Args.push_back(OperandInst->getOperand(0));
+          NewCaller = CallInst::Create(Callee->getFunctionType(), Callee, Args, "newmalloc", &I);
+          I.replaceAllUsesWith(NewCaller);
+          ToErased.push_back(OperandInst);
+          ToErased.push_back(&I);
         }
-        SkipOne = false; continue;
-      }
-      if (!FnParse) {
-        if ((FnName = getParse(I.getName(), PREFIX_OF_START, SUFFIX)) != "") {
-          FnParse = FunctionMap[FnName];
-          SkipOne = true, ArgNum = 0;
-        }
-      } else {
-        if (ArgNum++ < FnParse->arg_size()) {
-          if (StoreInst *S = dyn_cast<StoreInst>(&I)) {
-            X = S->getOperand(0);
-          } else if (ZExtInst *Z = dyn_cast<ZExtInst>(&I)) {
-            X = Z->getOperand(0);
-            SkipOne = true;
-          } else if (PtrToIntInst *P = dyn_cast<PtrToIntInst>(&I)) {
-            X = P->getOperand(0);
-            SkipOne = true;
-          }
-          Args.push_back(X);
-        } else {
-          if (!Ended) {
-            NewCall = CallInst::Create(FnParse->getFunctionType(), FnParse, Args, "", &I);
-            if (NewCall->getType() != Type::getVoidTy(Context)) {
-              NewCall->setName("newcall");
-              Caller = &I;
-            } else {
-              SkipOne = true;
-            }
-            Args.clear();
-            Ended = true;
-          } else {
-            SkipOne = true;
-          }
+      } else if (Variant == OPERAND) {
+        if (FnName == "write") {
+          Args.push_back(I.getOperand(0));
+          NewCaller = CallInst::Create(Callee->getFunctionType(), Callee, Args, "", &I);
+          I.replaceAllUsesWith(UndefValue::get(I.getType()));
+          ToErased.push_back(&I);
+        } else if (FnName == "free") {
+          Args.push_back(I.getOperand(0));
+          NewCaller = CallInst::Create(Callee->getFunctionType(), Callee, Args, "", &I);
+          I.replaceAllUsesWith(UndefValue::get(I.getType()));
+          ToErased.push_back(&I);
         }
       }
+      Args.clear();
     }
   }
-
-  for (auto &[C, CR, NCI] : Replacements) {
-    if (CR) CR->replaceAllUsesWith(NCI);
-    for (auto &I : C) Deletes.push_back(I);
+  std::reverse(ToErased.begin(), ToErased.end());
+  for (auto &I : ToErased) I->eraseFromParent();
+  for (auto &D : Dummies) {
+    for (auto &U : D->uses())
+      if (Instruction *UsrI = dyn_cast<Instruction>(U.getUser())) UsrI->eraseFromParent();
   }
-
-  reverse(Deletes.begin(), Deletes.end());
-  for (auto &I : Deletes) I->eraseFromParent();
-
-  for (auto &[_, D] : DummyMap) {
-    for (auto &U : D->uses()) {
-      User *Usr = U.getUser();
-      if (Instruction *UsrI = dyn_cast<Instruction>(Usr)) UsrI->eraseFromParent();
-    }
-    D->eraseFromParent();
-  }
+  for (auto &D : Dummies) D->eraseFromParent();
   return PreservedAnalyses::all();
 }

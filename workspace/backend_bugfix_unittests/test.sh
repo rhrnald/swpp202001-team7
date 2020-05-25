@@ -18,20 +18,18 @@ for tc in $DIR/testcases/*; do
 
   backend_s=$tc/.tmp1.s
   backend_out=$tc/.tmp1.txt
-  clang_o=$tc/.tmp2.out
-  clang_out=$tc/.tmp2.txt
   log="sf-interpreter.log"
 
   # backend's assembly (compiled by the sf-compiler)
   $DIR/../../bin/sf-compiler-team7 $orig_ll -o $backend_s
-  # clang's .out (compiled by LLVM_BIN/clang)
-  $1/clang -Wno-everything $read_write $orig_ll -o $clang_o
   
-  for inp in $tc/test/input*; do
+  for i in {1..3} ; do
     # backend's output (made by the interpreter)
-    $DIR/../../bin/interpreter $backend_s < $inp > $backend_out
+    in=$tc/test/input$i.txt
     # clang's output (made by executable object file)
-    ./$clang_o < $inp > $clang_out
+    clang_out=$tc/test/output$i.txt
+    # backend's output (made by interpreter)
+    $DIR/../../bin/interpreter $backend_s < $in > $backend_out
     # Check if the output is different
     diff $backend_out $clang_out
   done
@@ -39,8 +37,6 @@ for tc in $DIR/testcases/*; do
   # remove generated files
   rm $backend_s
   rm $backend_out
-  rm $clang_o
-  rm $clang_out
   rm $log
 done
 

@@ -18,6 +18,9 @@
 
 #include <string>
 
+//For Builtin Pass Runner
+#include "./LLVMPath.h"
+
 using namespace std;
 using namespace llvm;
 
@@ -58,6 +61,25 @@ static unique_ptr<Module> openInputFile(LLVMContext &Context,
   return M;
 }
 
+// Run builtin optimizations using LLVMBIN/opt
+static void runBuiltinOpt(string OptPipeline, unique_ptr<Module> &M) {
+  // System call to run builtin passes using `opt`.
+  error_code EC;
+  string InLL = ".input.ll";
+  string OutLL = ".outputLL";
+  raw_fd_ostream PrevModuleOut(InLL, EC);
+
+  // Print the previous module info
+  PrevModuleOut << *M;
+  string Command = LLVM_BIN;
+  Command += "/opt " + OptPipeline + " " + InLL + " -S -o " + OutLL;
+  system(Command.c_str());
+
+  // Reload and delete temporary files
+  M = openInputFile(M->getContext(), OutLL);
+  system(("rm " + InLL + " " + OutLL).c_str());
+}
+
 int main(int argc, char **argv) {
   sys::PrintStackTraceOnErrorSignal(argv[0]);
   PrettyStackTraceProgram X(argc, argv);
@@ -83,20 +105,16 @@ int main(int argc, char **argv) {
   PB.registerLoopAnalyses(LAM);
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-  // System call to run builtin passes using `opt`.
-  error_code EC;
-  string InLL = ".input.ll";
-  string OutLL = ".outputLL";
-  raw_fd_ostream PrevModuleOut(InLL, EC);
+  // Loop builtin optimizations
+  string LoopPrePasses = "-loop-simplify -loop-deletion";
+  string LoopBasicPasses = "-lcssa -licm -loop-vectorize -loop-unswitch -loop-distribute -loop-data-prefetch -loop-idiom -loop-simplifycfg -loop-rotate";
+  string LoopMainPasses = "-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8";
+  string LoopEndPasses = "-gvn -aggressive-instcombine";
 
-  // Print the previous module info
-  PrevModuleOut << *M;
-  string Command = "builtin/loopoptimization.sh " + InLL + " " + OutLL;
-  system(Command.c_str());
-
-  // Reload and delete temporary files
-  M = openInputFile(Context, OutLL);
-  system(("rm " + InLL + " " + OutLL).c_str());
+  runBuiltinOpt(LoopPrePasses, M);
+  runBuiltinOpt(LoopBasicPasses, M);
+  runBuiltinOpt(LoopMainPasses, M);
+  runBuiltinOpt(LoopEndPasses, M);
 
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FunctionPassManager FPM;

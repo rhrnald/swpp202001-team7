@@ -553,13 +553,11 @@ public:
     //
     // This should be lowered into:
     // loop:
-    //   (value x is 'load x_slot')
-    //   (value y is 'load y_slot')
+    //   (value x is 'load x_phi_tmp_slot')  -->  processed by visitPHINode
+    //   (value y is 'load y_phi_tmp_slot')  
     //   ...
-    //   store y, x_phi_tmp_slot
+    //   store y, x_phi_tmp_slot   -->  processed by processPHIsInSuccessor
     //   store x, y_phi_tmp_slot
-    //   store (load x_phi_tmp_slot), x_slot
-    //   store (load y_phi_tmp_slot), y_slot
     for (auto &PHI : Succ->phis()) {
       auto *V =
         translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), 1);
@@ -569,18 +567,16 @@ public:
       assert(PhiToTempAllocaMap.count(&PHI));
       Builder->CreateStore(V, PhiToTempAllocaMap[&PHI]);
     }
-    for (auto &PHI : Succ->phis()) {
-      assert(RegToAllocaMap.count(&PHI));
-      Builder->CreateStore(
-        Builder->CreateLoad(PhiToTempAllocaMap[&PHI], assemblyRegisterName(1)),
-        RegToAllocaMap[&PHI]);
-    }
   }
-
 
   // ---- Phi ----
   void visitPHINode(PHINode &PN) {
-    // Do nothing! already processed by processPHIsInSuccessors().
+    // PHI: Absorbing the tmp_slot
+    assert(RegToAllocaMap.count(&PN));
+    assert(PhiToTempAllocaMap.count(&PN));
+    Builder->CreateStore(
+      Builder->CreateLoad(PhiToTempAllocaMap[&PN], assemblyRegisterName(1)),
+      RegToAllocaMap[&PN]);
   }
 
   // ---- For Debugging -----

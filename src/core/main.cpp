@@ -9,10 +9,6 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Scalar/ADCE.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Utils.h"
-#include "llvm/Transforms/Vectorize.h"
 
 //Our Optimization
 #include "../passes/Wrapper.h"
@@ -87,29 +83,20 @@ int main(int argc, char **argv) {
   PB.registerLoopAnalyses(LAM);
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-  legacy::PassManager LPM1, LPM2;
-  ModulePassManager MPMLOOP1, MPMLOOP2;
+  // System call to run builtin passes using `opt`.
+  error_code EC;
+  string InLL = ".input.ll";
+  string OutLL = ".outputLL";
+  raw_fd_ostream PrevModuleOut(InLL, EC);
 
-  LPM1.add(createLoopSimplifyPass());
-  LPM1.add(createLICMPass());
-  LPM1.add(createLoopUnswitchPass());
-  LPM1.add(createLoopDistributePass());
-  LPM1.add(createLCSSAPass());
-  LPM1.add(createLoopIdiomPass());
-  LPM1.add(createLoopDeletionPass());
-  LPM1.add(createLoopVectorizePass());
-  LPM1.add(createLoopSimplifyCFGPass());
-  LPM1.add(createLoopDataPrefetchPass());
-  LPM1.add(createLoopRotatePass());
-  LPM1.add(createLoopInterchangePass());
-  MPMLOOP1.addPass(LoopUnrollPreHelper());
-  LPM2.add(createLoopUnrollPass());
-  MPMLOOP2.addPass(LoopUnrollPostHelper());
+  // Print the previous module info
+  PrevModuleOut << *M;
+  string Command = "builtin/loopoptimization.sh " + InLL + " " + OutLL;
+  system(Command.c_str());
 
-  LPM1.run(*M);
-  MPMLOOP1.run(*M, MAM);
-  LPM2.run(*M);
-  MPMLOOP2.run(*M, MAM);
+  // Reload and delete temporary files
+  M = openInputFile(Context, OutLL);
+  system(("rm " + InLL + " " + OutLL).c_str());
 
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FunctionPassManager FPM;
@@ -120,7 +107,7 @@ int main(int argc, char **argv) {
 
   FPM.addPass(RemoveUnsupportedOps());
 
-  // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.*/
+  // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));  
 

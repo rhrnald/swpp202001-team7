@@ -1,0 +1,21 @@
+# Builtin Passes related to loops
+LOOP_PRE_PASSES="-loop-simplify -loop-deletion"
+LOOP_BASIC_PASSES="-lcssa -licm -loop-vectorize -loop-unswitch -loop-distribute -loop-data-prefetch -loop-idiom -loop-simplifycfg -loop-rotate"
+LOOP_MAIN_PASSES="-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8"
+LOOP_END_PASSES="-gvn -aggressive-instcombine"
+
+# Temporary files to make it run in order
+TMP1=".tmp1.ll"
+TMP2=".tmp2.ll"
+TMP3=".tmp3.ll"
+
+# Apply the optimizations
+$LLVM_BIN/opt $LOOP_PRE_PASSES $1 -S -o $TMP1
+$LLVM_BIN/opt $LOOP_BASIC_PASSES $TMP1 -S -o $TMP2
+$LLVM_BIN/opt $LOOP_MAIN_PASSES $TMP2 -S -o $TMP3
+$LLVM_BIN/opt $LOOP_END_PASSES $TMP3 -S -o $2
+
+# Remove temporary files
+rm $TMP1
+rm $TMP2
+rm $TMP3

@@ -34,3 +34,8 @@ echo "GTESTSRC=${GTESTSRC}" >> Makefile
 echo "FILECHECK_PATH=$1/FileCheck" >> Makefile
 echo "LLVM_BIN=$1" >> Makefile
 cat Makefile.template >>Makefile
+
+echo "#/bin/bash" > builtin/LoopOptimization.sh
+echo "LLVM_BIN=$1" >> builtin/LoopOptimization.sh
+cat builtin/LoopOptimization.sh.template >> builtin/LoopOptimization.sh
+chmod +x builtin/LoopOptimization.sh

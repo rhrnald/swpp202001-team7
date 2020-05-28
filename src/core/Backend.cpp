@@ -14,7 +14,6 @@
 using namespace llvm;
 using namespace std;
 
-
 // Return sizeof(T) in bytes.
 unsigned getAccessSize(Type *T) {
   if (isa<PointerType>(T))
@@ -49,6 +48,8 @@ private:
   map<BasicBlock *, BasicBlock *> BBMap;
   map<Instruction *, AllocaInst *> RegToAllocaMap;
   map<PHINode *, AllocaInst *> PhiToTempAllocaMap;
+
+  bool RefSet;  // a flag indicates whether the reference sp is set
 
   void raiseError(Instruction &I) {
     errs() << "DepromoteRegisters: Unsupported Instruction: " << I << "\n";
@@ -207,6 +208,8 @@ public:
     assert(FuncMap.count(&F));
     FuncToEmit = FuncMap[&F];
 
+    RefSet = false;
+
     // Fill source argument -> target argument map.
     for (unsigned i = 0, e = F.arg_size(); i < e; ++i) {
       auto *Arg = FuncToEmit->getArg(i);
@@ -321,7 +324,8 @@ public:
     auto *Ty = BO.getType();
     checkSrcType(Ty);
 
-    switch(BO.getOpcode()) {
+    auto Opcode = BO.getOpcode();
+    switch(Opcode) {
     case Instruction::UDiv:
     case Instruction::URem:
     case Instruction::Mul:
@@ -347,12 +351,12 @@ public:
         assemblyRegisterName(2) + "after_trunc__");
 
     Value *Res = nullptr;
-    if (BO.getType() != I64Ty) {
-      Res = Builder->CreateBinOp(BO.getOpcode(), Op1Trunc, Op2Trunc,
+    if (Ty != I64Ty) {
+      Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc,
                                  assemblyRegisterName(1) + "before_zext__");
       Res = Builder->CreateZExt(Res, I64Ty, assemblyRegisterName(1));
     } else {
-      Res = Builder->CreateBinOp(BO.getOpcode(), Op1Trunc, Op2Trunc,
+      Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc,
                                  assemblyRegisterName(1));
     }
     emitStoreToSrcRegister(Res, &BO);
@@ -444,14 +448,14 @@ public:
     // Get the sign bit.
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
     auto *Op = translateSrcOperandToTgt(SI.getOperand(0), 1);
-    auto *AndVal =
-      Builder->CreateAnd(Op, (1llu << (bw - 1)), assemblyRegisterName(2));
-    auto *NegVal =
-      Builder->CreateSub(ConstantInt::get(I64Ty, 0), AndVal,
-                         assemblyRegisterName(2));
-    auto *ResVal =
-      Builder->CreateOr(NegVal, Op, assemblyRegisterName(1));
-    emitStoreToSrcRegister(ResVal, &SI);
+    if (bw < 64) {
+      Op =
+        Builder->CreateMul(Op, ConstantInt::get(I64Ty, (1llu << (64 - bw))),
+                          assemblyRegisterName(1));
+      Op =
+        Builder->CreateAShr(Op, 64 - bw, assemblyRegisterName(1));
+    }
+    emitStoreToSrcRegister(Op, &SI);
   }
   void visitZExtInst(ZExtInst &ZI) {
     // Everything is zero-extended by default.
@@ -460,9 +464,10 @@ public:
   }
   void visitTruncInst(TruncInst &TI) {
     auto *Op = translateSrcOperandToTgt(TI.getOperand(0), 1);
-    uint64_t Mask = (1llu << (TI.getDestTy()->getIntegerBitWidth())) - 1;
+    uint64_t Divisor = (1llu << (TI.getDestTy()->getIntegerBitWidth()));
     emitStoreToSrcRegister(
-      Builder->CreateAnd(Op, Mask, assemblyRegisterName(1)),
+      Builder->CreateURem(Op, ConstantInt::get(I64Ty, Divisor), 
+                            assemblyRegisterName(1)),
       &TI);
   }
   void visitPtrToIntInst(PtrToIntInst &PI) {
@@ -484,11 +489,20 @@ public:
     assert(FuncMap.count(CalledF));
     auto *CalledFInTgt = FuncMap[CalledF];
 
+    if (!RefSet && CalledF->getName() == SetRefName) {
+      RefSet = true;
+      // Now the reference sp is set. Prepare for it!
+    }
+    else if (RefSet && CalledF->getName() == SpillRefName) {
+      // The reference sp is spilled for the moment. Enjoy!
+      // However, don't forget that RefSet is still true!
+    }
+
     SmallVector<Value *, 16> Args;
     unsigned Idx = 1;
     for (auto I = CI.arg_begin(), E = CI.arg_end(); I != E; ++I) {
       Args.emplace_back(translateSrcOperandToTgt(*I, Idx));
-      ++Idx;
+      if(!isa<Constant>(&*I)) ++Idx;  // constants don't need registers
     }
     if (CI.hasName()) {
       Value *Res = Builder->CreateCall(CalledFInTgt, Args,
@@ -531,8 +545,7 @@ public:
 
     auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), 1);
     vector<pair<ConstantInt *, BasicBlock *>> TgtCases;
-    for (SwitchInst::CaseIt I = SI.case_begin(), E = SI.case_end();
-         I != E; ++I) {
+    for (auto I = SI.case_begin(), E = SI.case_end(); I != E; ++I) {
       auto *C = ConstantInt::get(I64Ty, I->getCaseValue()->getZExtValue());
       TgtCases.emplace_back(C, BBMap[I->getCaseSuccessor()]);
     }
@@ -623,8 +636,70 @@ public:
   }
 };
 
+class AllocaBytesHandler : public InstVisitor<AllocaBytesHandler> {
+private:
+  Function *SetRefFn, *SpillRefFn, *FreeBytesFn;
+public:
+  AllocaBytesHandler(Module &M) {
+    auto RefFTy = FunctionType::get(Type::getVoidTy(M.getContext()), false);
+    SetRefFn = Function::Create(RefFTy, Function::ExternalLinkage, SetRefName, M);
+    SpillRefFn = Function::Create(RefFTy, Function::ExternalLinkage, SpillRefName, M);
+    FreeBytesFn = Function::Create(FunctionType::get(Type::getVoidTy(M.getContext()),
+                                    {Type::getInt64Ty(M.getContext())}, false), 
+                                    Function::ExternalLinkage, FreeBytesName, M);
+  }
 
-PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
+  void visitFunction(Function &F) {
+    bool ABFound = false;
+    for (auto &BB : F) {
+      bool FreeInThisBlock = true;
+      stack<Value *> SizeVector;
+      for (auto &I : BB) {
+        if (auto CI = dyn_cast<CallInst>(&I)) {
+          Function *CalledFn = CI->getCalledFunction();
+          if (CalledFn->getName() == AllocaBytesName) {
+            if (!ABFound) {
+              CallInst::Create(SetRefFn)->insertBefore(CI);
+              ABFound = true;
+            }
+            if (FreeInThisBlock) {
+              ConstantInt *FITB;
+              assert((FITB = dyn_cast<ConstantInt>(CI->getArgOperand(1))) &&
+                     "free_in_this_block should be constant!");
+              if (FITB->isZero()) FreeInThisBlock = false;
+              else {
+                SizeVector.push(CI->getArgOperand(0));
+              }
+            }
+          }
+          else if (ABFound && CI->arg_size() == 16) {
+            bool NoConstant = true;
+            for (auto i = CI->arg_begin(), e = CI->arg_end(); i != e; ++i) {
+              if (isa<Constant>(&*i)) {
+                NoConstant = false;
+                break;
+              }
+            }
+            if (NoConstant) {
+              CallInst::Create(SpillRefFn)->insertBefore(CI);
+            }
+          }
+        }
+      }
+      if (FreeInThisBlock && !SizeVector.empty()) {
+        Value *Size = SizeVector.top();
+        SizeVector.pop();
+        while (!SizeVector.empty()) {
+          Size = BinaryOperator::CreateNUWAdd(Size, SizeVector.top(), "free_size");
+          SizeVector.pop();
+        }
+        CallInst::Create(FreeBytesFn, {Size})->insertBefore(&*BB.rbegin());
+      }
+    }
+  }
+};
+
+PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   if (verifyModule(M, &errs(), nullptr))
     exit(1);
 
@@ -635,6 +710,10 @@ PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
   // Second, convert known constant expressions to instructions.
   ConstExprToInsts CEI;
   CEI.visit(M);
+
+  // Second and half, handle AllocaBytes
+  AllocaBytesHandler ABH(M);
+  ABH.visit(M);
 
   // Third, depromote registers to alloca & canonicalize iN types into i64.
   DepromoteRegisters Deprom;

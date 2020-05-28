@@ -414,7 +414,7 @@ public:
     if (FnName == SetRefName) {
       assert(CurrentSP == "sp" && "set_ref will be called only once.");
       emitAssembly(";", {"set ref sp"});
-      emitAssembly(RefSP, "mul", {"sp", "1", "64"});
+      emitCopy(RefSP, "sp");
       CurrentSP = RefSP;
       return;
     }
@@ -435,7 +435,7 @@ public:
         string Size = getOperand(*CI.arg_begin()).first;
         emitAssembly(";", {AllocaBytesName, Size});
         emitAssembly("sp", "sub", {"sp", Size, "64"});
-        emitAssembly(DestReg, "mul", {"sp", "1", "64"});
+        emitCopy(DestReg, "sp");
       }
       return;
     }

@@ -9,13 +9,22 @@ entry:
   %a = alloca [50 x i64], align 16
   %tmp = bitcast [50 x i64]* %a to i8*
   %call = call noalias i8* @malloc(i64 400) #4
-  %tmp21 = bitcast i8* %call to i64*
+  %tmp24 = bitcast i8* %call to i64*
+  %call1 = call i64 (...) @read()
+  %cmp = icmp sgt i64 %call1, 50
+  br i1 %cmp, label %if.then, label %if.end
+
+if.then:                                          ; preds = %entry
+  br label %if.end
+
+if.end:                                           ; preds = %if.then, %entry
+  %limit.0 = phi i64 [ 50, %if.then ], [ %call1, %entry ]
   br label %for.cond
 
-for.cond:                                         ; preds = %for.inc, %entry
-  %i.0 = phi i64 [ 0, %entry ], [ %inc, %for.inc ]
-  %cmp = icmp slt i64 %i.0, 50
-  br i1 %cmp, label %for.body, label %for.cond.cleanup
+for.cond:                                         ; preds = %for.inc, %if.end
+  %i.0 = phi i64 [ 0, %if.end ], [ %inc, %for.inc ]
+  %cmp2 = icmp slt i64 %i.0, %limit.0
+  br i1 %cmp2, label %for.body, label %for.cond.cleanup
 
 for.cond.cleanup:                                 ; preds = %for.cond
   br label %for.end
@@ -24,8 +33,8 @@ for.body:                                         ; preds = %for.cond
   %arrayidx = getelementptr inbounds [50 x i64], [50 x i64]* %a, i64 0, i64 %i.0
   store i64 %i.0, i64* %arrayidx, align 8
   %sub = sub nsw i64 49, %i.0
-  %arrayidx1 = getelementptr inbounds i64, i64* %tmp21, i64 %i.0
-  store i64 %sub, i64* %arrayidx1, align 8
+  %arrayidx3 = getelementptr inbounds i64, i64* %tmp24, i64 %i.0
+  store i64 %sub, i64* %arrayidx3, align 8
   br label %for.inc
 
 for.inc:                                          ; preds = %for.body
@@ -33,41 +42,41 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond.cleanup
-  br label %for.cond3
+  br label %for.cond5
 
-for.cond3:                                        ; preds = %for.inc16, %for.end
-  %sum.0 = phi i64 [ 0, %for.end ], [ %add15, %for.inc16 ]
-  %i2.0 = phi i64 [ 0, %for.end ], [ %inc17, %for.inc16 ]
-  %cmp4 = icmp slt i64 %i2.0, 50
-  br i1 %cmp4, label %for.body6, label %for.cond.cleanup5
+for.cond5:                                        ; preds = %for.inc18, %for.end
+  %sum.0 = phi i64 [ 0, %for.end ], [ %add17, %for.inc18 ]
+  %i4.0 = phi i64 [ 0, %for.end ], [ %inc19, %for.inc18 ]
+  %cmp6 = icmp slt i64 %i4.0, %limit.0
+  br i1 %cmp6, label %for.body8, label %for.cond.cleanup7
 
-for.cond.cleanup5:                                ; preds = %for.cond3
-  br label %for.end18
+for.cond.cleanup7:                                ; preds = %for.cond5
+  br label %for.end20
 
-for.body6:                                        ; preds = %for.cond3
-  %arrayidx7 = getelementptr inbounds [50 x i64], [50 x i64]* %a, i64 0, i64 %i2.0
-  %tmp22 = load i64, i64* %arrayidx7, align 8
-  %add = add nsw i64 %sum.0, %tmp22
-  %arrayidx8 = getelementptr inbounds i64, i64* %tmp21, i64 %i2.0
-  %tmp23 = load i64, i64* %arrayidx8, align 8
-  %add9 = add nsw i64 %add, %tmp23
-  %sub10 = sub nsw i64 49, %i2.0
-  %arrayidx11 = getelementptr inbounds [50 x i64], [50 x i64]* %a, i64 0, i64 %sub10
-  %tmp24 = load i64, i64* %arrayidx11, align 8
-  %add12 = add nsw i64 %add9, %tmp24
-  %sub13 = sub nsw i64 49, %i2.0
-  %arrayidx14 = getelementptr inbounds i64, i64* %tmp21, i64 %sub13
-  %tmp25 = load i64, i64* %arrayidx14, align 8
-  %add15 = add nsw i64 %add12, %tmp25
-  br label %for.inc16
+for.body8:                                        ; preds = %for.cond5
+  %arrayidx9 = getelementptr inbounds [50 x i64], [50 x i64]* %a, i64 0, i64 %i4.0
+  %tmp25 = load i64, i64* %arrayidx9, align 8
+  %add = add nsw i64 %sum.0, %tmp25
+  %arrayidx10 = getelementptr inbounds i64, i64* %tmp24, i64 %i4.0
+  %tmp26 = load i64, i64* %arrayidx10, align 8
+  %add11 = add nsw i64 %add, %tmp26
+  %sub12 = sub nsw i64 49, %i4.0
+  %arrayidx13 = getelementptr inbounds [50 x i64], [50 x i64]* %a, i64 0, i64 %sub12
+  %tmp27 = load i64, i64* %arrayidx13, align 8
+  %add14 = add nsw i64 %add11, %tmp27
+  %sub15 = sub nsw i64 49, %i4.0
+  %arrayidx16 = getelementptr inbounds i64, i64* %tmp24, i64 %sub15
+  %tmp28 = load i64, i64* %arrayidx16, align 8
+  %add17 = add nsw i64 %add14, %tmp28
+  br label %for.inc18
 
-for.inc16:                                        ; preds = %for.body6
-  %inc17 = add nsw i64 %i2.0, 1
-  br label %for.cond3
+for.inc18:                                        ; preds = %for.body8
+  %inc19 = add nsw i64 %i4.0, 1
+  br label %for.cond5
 
-for.end18:                                        ; preds = %for.cond.cleanup5
+for.end20:                                        ; preds = %for.cond.cleanup7
   call void @write(i64 %sum.0)
-  %tmp26 = bitcast [50 x i64]* %a to i8*
+  %tmp29 = bitcast [50 x i64]* %a to i8*
   ret i32 0
 }
 
@@ -76,6 +85,8 @@ declare void @llvm.lifetime.start.p0i8(i64 immarg, i8* nocapture) #1
 
 ; Function Attrs: nounwind
 declare dso_local noalias i8* @malloc(i64) #2
+
+declare dso_local i64 @read(...) #3
 
 ; Function Attrs: argmemonly nounwind willreturn
 declare void @llvm.lifetime.end.p0i8(i64 immarg, i8* nocapture) #1
@@ -92,4 +103,4 @@ attributes #4 = { nounwind }
 !llvm.ident = !{!1}
 
 !0 = !{i32 1, !"wchar_size", i32 4}
-!1 = !{!"clang version 10.0.1 (https://github.com/llvm/llvm-project.git eaae6dfc545000e335e6f89abb9c78818383d7ad)"}
+!1 = !{!"clang version 10.0.1 (https://github.com/llvm/llvm-project.git f79cd71e145c6fd005ba4dd1238128dfa0dc2cb6)"}

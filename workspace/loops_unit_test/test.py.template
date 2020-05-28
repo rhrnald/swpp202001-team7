@@ -1,3 +1,4 @@
+# Should be built by releaseassert version!!
 import os, pathlib, subprocess
 
 # Bash Output Extracter

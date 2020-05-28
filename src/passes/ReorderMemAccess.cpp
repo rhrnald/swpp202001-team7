@@ -70,27 +70,7 @@ bool checkDom(Instruction* I, Instruction* J) {
   return false;
 }
 
-/*class ConstExprToInsts : public InstVisitor<ConstExprToInsts> {
-  Instruction *ConvertCEToInst(ConstantExpr *CE, Instruction *InsertBefore) {
-    auto *NewI = CE->getAsInstruction();
-    NewI->insertBefore(InsertBefore);
-    NewI->setName("from_constexpr");
-    visitInstruction(*NewI);
-    return NewI;
-  }
-public:
-  void visitInstruction(Instruction &I) {
-    for (unsigned Idx = 0; Idx < I.getNumOperands(); ++Idx) {
-      if (auto *CE = dyn_cast<ConstantExpr>(I.getOperand(Idx))) {
-        I.setOperand(Idx, ConvertCEToInst(CE, &I));
-      }
-    }
-  }
-};*/
-
 PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
-  //ConstExprToInsts CEI;
-  //CEI.visit(M);
   for (auto &F : M) for (auto &BB : F) {
 
     //Initialize
@@ -98,6 +78,7 @@ PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
     for (auto &I : BB) {
       Insts.push_back(&I);
     }
+    Instruction *BranchInst=Insts.back(); Insts.pop_back();
 
     int n = Insts.size();
     vector<vector<int>> dom;
@@ -116,20 +97,23 @@ PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
         cnt[j]++;
       }
     }
-    cnt[n-1]=n-1;
-    for(int i=0; i<n-1; i++)
-      dom[i].push_back(n-1);
 
     //Reorder Instructions
     int lft=n;
     int block=HEAP;
-    while(lft) {
+
+    // Will block Heap and Stack in alternatively.
+    // And push unblocked instruction which can be(not violating dominance).
+    while(lft) { //While there are left Inst.
+
       bool flag=true;
-      while(flag) {
+      while(flag) { //While no more Inst pushed.
         flag=false;
+
         for(int i=0; i<n; i++) {
-          if(used[i] || type[i]==block) continue;
-          if(!cnt[i]) {
+          if(used[i] || type[i]==block) continue; //If instruction is already used/ If instruction is blocked.
+
+          if(!cnt[i]) { //No dominancy=No more instruction needed ahead of current instruction.
             flag=true;
             for(int nxt : dom[i]) cnt[nxt]--;
             used[i]=true;
@@ -138,6 +122,8 @@ PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
           }
         }
       }
+
+      //Change blocking.
       block=STACK+HEAP-block;
     }
 
@@ -145,11 +131,13 @@ PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
     for (auto &Iptr : Insts) {
       Iptr->removeFromParent();
     }
+    BranchInst->removeFromParent();
 
     //restruct Block
     for (auto &Iptr : newInsts) {
       BB.getInstList().push_back(Iptr);
     }
+    BB.getInstList().push_back(BranchInst);
   }
   return PreservedAnalyses::all();
 }

@@ -1,11 +1,8 @@
-
 #include "llvm/IR/Instructions.h"
-#include "llvm/Support/raw_os_ostream.h"
 
 #include <stack>
 #include <set>
 #include <cstdlib>
-#include <ctime>
 
 // Since the current Backend is using r1-r3, let's just use r4-r16.
 #define MAX_REG_N 16
@@ -46,7 +43,6 @@ public:
     for (unsigned i = MAX_REG_N; i >= MIN_REG_N; --i) {
       FreeRegisters.push(i);
     }
-    srand(time(nullptr));
   }
 
   /*

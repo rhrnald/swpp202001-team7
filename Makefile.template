@@ -63,13 +63,15 @@ obj/test/%.o: src/test/%.cpp
 core: bin/sf-compiler-team7
 
 test: all
-	# Google Tests
 	@echo Googletest
+	@printf "======================================================\n"
 	@./bin/sf-compiler-test-team7
-	# Unit Tests
+	@printf "\nUnit test(except Googletest)\n"
+	@printf "======================================================\n"
 	@python3 test/loops_unit_test/test.py
 	@test/backend_bugfix_unittests/test.sh $(LLVM_BIN)
-	# Case Tests
+	@printf "\nCase test\n"
+	@printf "======================================================\n"
 	@test/checker.sh test/testcases $(PASSES)
 
 #clean

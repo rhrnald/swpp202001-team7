@@ -63,11 +63,10 @@ obj/test/%.o: src/test/%.cpp
 core: bin/sf-compiler-team7
 
 test: all
-	@python3 workspace/loops_unit_test/test.py
 	@echo Googletest
 	@./bin/sf-compiler-test-team7
+	@python3 workspace/loops_unit_test/test.py
 	@workspace/backend_bugfix_unittests/test.sh $(LLVM_BIN)
-	@workspace/checker.sh workspace/testcases/*
 
 #clean
 clean:

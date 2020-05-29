@@ -45,6 +45,14 @@ static cl::opt<bool> optPrintDepromotedModule(
     "print-depromoted-module", cl::desc("print depromoted module"),
     cl::cat(optCategory), cl::init(false));
 
+//Add -except option for test.
+static cl::opt<string> exPassList(
+    "except", cl::desc("Passes not to included on building"), cl::cat(optCategory), cl::init(""));
+
+//Add -nopass option for test.
+static cl::opt<bool> noPass(
+    "nopass", cl::desc("add no pass to compiler"), cl::cat(optCategory), cl::init(false));
+
 static llvm::ExitOnError ExitOnErr;
 
 // adapted from llvm-dis.cpp
@@ -59,6 +67,26 @@ static unique_ptr<Module> openInputFile(LLVMContext &Context,
   }
   ExitOnErr(M->materializeAll());
   return M;
+}
+
+// split passes by ,
+void split(string &s, vector<string> &list) {
+  int prv=0;
+  int n=(int)s.size();
+  for(int i=0; i<n-1; i++) {
+    if(s[i]==',') {
+      list.push_back(s.substr(prv, i-prv-1));
+      prv=i+1;
+    }
+  }
+  list.push_back(s.substr(prv, n-prv));
+}
+
+bool excepted(const char* c , vector<string> &list) {
+  if(noPass) return true;
+  string s(c);
+  for(auto &e :list) if(e==s) return true;
+  return false;
 }
 
 // Run builtin optimizations using LLVMBIN/opt
@@ -105,23 +133,31 @@ int main(int argc, char **argv) {
   PB.registerLoopAnalyses(LAM);
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-  // Loop builtin optimizations
-  string LoopPrePasses = "-loop-simplify -loop-deletion -lcssa -licm -loop-distribute";
-  string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-reduce -loop-simplifycfg -loop-rotate";
-  string LoopMainPasses = "-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder";
-  string LoopEndPasses = "-instcombine -simplifycfg -loop-instsimplify -gvn -instcombine -aggressive-instcombine";
+  // Pass pipeline processer
+  vector<string> exceptList;
+  split(exPassList, exceptList);
 
-  runBuiltinOpt(LoopPrePasses, M);
-  runBuiltinOpt(LoopBasicPasses, M);
-  runBuiltinOpt(LoopMainPasses, M);
-  runBuiltinOpt(LoopEndPasses, M);
+  if (!excepted("LoopOptimization", exceptList)) {
+    // Loop builtin optimizations
+    string LoopPrePasses = "-loop-simplify -loop-deletion -lcssa -licm -loop-distribute";
+    string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-reduce -loop-simplifycfg -loop-rotate";
+    string LoopMainPasses = "-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder";
+    string LoopEndPasses = "-instcombine -simplifycfg -loop-instsimplify -gvn -instcombine -aggressive-instcombine -inline";
+
+    runBuiltinOpt(LoopPrePasses, M);
+    runBuiltinOpt(LoopBasicPasses, M);
+    runBuiltinOpt(LoopMainPasses, M);
+    runBuiltinOpt(LoopEndPasses, M);
+  }
 
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FunctionPassManager FPM;
 
   FPM.addPass(SROA());
   FPM.addPass(ADCEPass());
-  FPM.addPass(InstCombinePass());
+
+  if (!excepted("InstCombinePass"), exceptList)
+    FPM.addPass(InstCombinePass());
 
   FPM.addPass(RemoveUnsupportedOps());
 
@@ -129,9 +165,14 @@ int main(int argc, char **argv) {
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));  
 
-  MPM.addPass(CheckConstExpr());
-  MPM.addPass(PackRegisters());
-  MPM.addPass(WeirdArithmetic());
+  if (!excepted("CheckConstExpr"), exceptList)
+    MPM.addPass(CheckConstExpr());
+  if (!excepted("PackRegisters"), exceptList)
+    MPM.addPass(PackRegisters());
+  if (!excepted("ReorderMemAccess"), exceptList)
+    MPM.addPass(ReorderMemAccess());
+  if (!excepted("WeirdArithmetic"), exceptList)
+    MPM.addPass(WeirdArithmetic());
 
   // Run!
   string ll=optOutputLL;

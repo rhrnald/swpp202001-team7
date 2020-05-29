@@ -67,10 +67,10 @@ test: all
 	@echo Googletest
 	@./bin/sf-compiler-test-team7
 	# Unit Tests
-	@python3 workspace/loops_unit_test/test.py
-	@workspace/backend_bugfix_unittests/test.sh $(LLVM_BIN)
+	@python3 test/loops_unit_test/test.py
+	@test/backend_bugfix_unittests/test.sh $(LLVM_BIN)
 	# Case Tests
-	@workspace/checker.sh workspace/testcases $(PASSES)
+	@test/checker.sh test/testcases $(PASSES)
 
 #clean
 clean:

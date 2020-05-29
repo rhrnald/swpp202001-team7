@@ -28,12 +28,17 @@ static bool isMallocCall(const CallInst *CI) {
   //   identifier as a macro name, the behavior is undefined.
   return CI->getCalledFunction()->getName() == "malloc";
 }
+static bool isAllocaByteCall(const CallInst *CI) {
+  return CI->getCalledFunction()->getName() == "__alloca_bytes__";
+}
 
 // A very simple getBlockType().
 // Sees which memory area V is pointing to.
 AllocType getBlockType(const Value *V) {
   if (auto *CI = dyn_cast<CallInst>(V)) {
     if (isMallocCall(CI))
+      return HEAP;
+    if (isAllocaByteCall(CI)) 
       return HEAP;
   } else if (auto *AI = dyn_cast<AllocaInst>(V)) {
     return STACK;

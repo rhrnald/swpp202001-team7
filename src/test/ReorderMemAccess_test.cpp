@@ -1,5 +1,3 @@
-#ifdef REORDER_MEM_ACCESS
-
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IRBuilder.h"
@@ -8,7 +6,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
 
-#include "../passes/ReorderMemAccess.h"
+#include "../passes/Wrapper.h"
 
 using namespace llvm;
 using namespace std;
@@ -89,5 +87,3 @@ TEST(PassCheck, ReorderMemAccessTest) {
   EXPECT_EQ(aft[6],bef[4]);
   EXPECT_EQ(aft[7],bef[6]);
 }
-
-#endif

@@ -72,7 +72,6 @@ test: all
 	# Case Tests
 	@workspace/checker.sh workspace/testcases $(PASSES)
 
-
 #clean
 clean:
 	rm -rf bin obj

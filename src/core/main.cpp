@@ -82,7 +82,7 @@ void split(string &s, vector<string> &list) {
   list.push_back(s.substr(prv, n-prv));
 }
 
-bool excepted(const char* c , vector<string> &list) {
+bool excepted(const char *c , vector<string> &list) {
   if(noPass) return true;
   string s(c);
   for(auto &e :list) if(e==s) return true;
@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
   FPM.addPass(SROA());
   FPM.addPass(ADCEPass());
 
-  if (!excepted("InstCombinePass"), exceptList)
+  if (!excepted("InstCombinePass", exceptList))
     FPM.addPass(InstCombinePass());
 
   FPM.addPass(RemoveUnsupportedOps());
@@ -165,13 +165,13 @@ int main(int argc, char **argv) {
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));  
 
-  if (!excepted("CheckConstExpr"), exceptList)
+  if (!excepted("CheckConstExpr", exceptList))
     MPM.addPass(CheckConstExpr());
-  if (!excepted("PackRegisters"), exceptList)
+  if (!excepted("PackRegisters", exceptList))
     MPM.addPass(PackRegisters());
-  if (!excepted("ReorderMemAccess"), exceptList)
+  if (!excepted("ReorderMemAccess", exceptList))
     MPM.addPass(ReorderMemAccess());
-  if (!excepted("WeirdArithmetic"), exceptList)
+  if (!excepted("WeirdArithmetic", exceptList))
     MPM.addPass(WeirdArithmetic());
 
   // Run!

@@ -5,3 +5,4 @@ sf-compiler-tests
 obj
 .tmp.s
 bin
+src/core/LLVMPath.h

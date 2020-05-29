@@ -33,8 +33,21 @@ private:
     return RegId;
   }
 
-  vector<Allocation *>::iterator randomVictim() {
-    return ActiveSet.begin() + (rand() % ActiveSet.size());
+  vector<Allocation *>::iterator getVictim(unsigned RegId) {
+    vector<Allocation *>::iterator Victim;
+    if (RegId) {
+      for (auto I = ActiveSet.begin(), E = ActiveSet.end(); I != E; I++) {
+        if ((*I)->RegId == RegId) {
+          Victim = I;
+          break;
+        }
+      }
+    }
+    else {
+      // random policy
+      Victim = ActiveSet.begin() + (rand() % ActiveSet.size());
+    }
+    return Victim;
   }
 
 public:
@@ -77,10 +90,13 @@ public:
   /*
    * evict an allocation from ActiveSet.
    * return the evicted Instruction.
+   * evict a specific register when RegId is given.
    */
-  Instruction *evict() {
+  Instruction *evict(unsigned RegId = 0) {
     if (ActiveSet.size() == 0) return nullptr;
-    auto Victim = randomVictim();
+    if (RegId) assert(FreeRegisters.count(RegId) == 0 &&
+                      TempRegisters.count(RegId) == 0);
+    auto Victim = getVictim(RegId);
     auto VictimRequester = (*Victim)->Requester;
     auto VictimId = (*Victim)->RegId;
     
@@ -97,6 +113,34 @@ public:
       TempRegisters.insert(regId);
     }
     return regId;
+  }
+  // Request a register with a specific id.
+  // Returns zero when there is no register for RegId.
+  // Note that RegId cannot be already in TempRegisters!
+  unsigned requestTempRegister(unsigned RegId) {
+    assert(TempRegisters.count(RegId) == 0);
+    stack<unsigned> Temp;
+    unsigned FoundId = 0;
+    // Find RegId
+    while (!FreeRegisters.empty()) {
+      if (FreeRegisters.top() == RegId) {
+        FoundId = RegId;
+        break;
+      }
+      else {
+        Temp.push(FreeRegisters.top());
+        FreeRegisters.pop();
+      }
+    }
+    // Refill the stack
+    while (!Temp.empty()) {
+      FreeRegisters.push(Temp.top());
+      Temp.pop();
+    }
+    if (FoundId) {
+      TempRegisters.insert(FoundId);
+    }
+    return FoundId;
   }
 
   void giveUpTempRegister(unsigned RegId) {

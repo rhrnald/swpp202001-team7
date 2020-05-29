@@ -39,7 +39,7 @@ AllocType getBlockType(const Value *V) {
     if (isMallocCall(CI))
       return HEAP;
     if (isAllocaByteCall(CI)) 
-      return HEAP;
+      return STACK;
   } else if (auto *AI = dyn_cast<AllocaInst>(V)) {
     return STACK;
   } else if (auto *BI = dyn_cast<BitCastInst>(V)) {

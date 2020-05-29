@@ -26,7 +26,7 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
       if ((InstX = dyn_cast<Instruction>(X))
           && InstX->getOpcode() == BinaryOperator::Shl
           && match(InstX->getOperand(1), m_ConstantInt(C))) {
-        N |= ((1 << C->getZExtValue()) - 1);
+        N |= ((1ULL << C->getZExtValue()) - 1ULL);
       }
       // if (N+1) is a power of 2
       // - (N+1) is never zero, since instcombine pass removes
@@ -44,12 +44,12 @@ PreservedAnalyses WeirdArithmetic::run(Module &M, ModuleAnalysisManager &MAM) {
       // srl x, N => mul x, 2^N
       case BinaryOperator::Shl:
         NewI = BinaryOperator::CreateMul(
-            X, ConstantInt::get(I.getType(), 1<<N));
+            X, ConstantInt::get(I.getType(), 1ULL<<N));
         break;
       // lshr x, N => udiv x, 2^N
       case BinaryOperator::LShr:
         NewI = BinaryOperator::CreateUDiv(
-            X, ConstantInt::get(I.getType(), 1<<N));
+            X, ConstantInt::get(I.getType(), 1ULL<<N));
         break;
       }
     }

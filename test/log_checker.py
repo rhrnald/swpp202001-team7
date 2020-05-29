@@ -1,5 +1,6 @@
 #python3 log_checker.py (test case name) (original output) (optimized output) (original log) (optimized log)
-import os, sys
+import os, sys, pathlib
+import subprocess
 
 TC_LEN = 15
 COST_LEN = 20
@@ -8,6 +9,9 @@ RED = '\33[31m'
 BLUE = '\33[34m'
 GREEN = '\33[32m'
 ORIG = '\33[0m'
+
+LOG_ORIGINAL = os.path.join(str(pathlib.Path(__file__).parent.absolute()), 'original.log')
+LOG_CONVERTED = os.path.join(str(pathlib.Path(__file__).parent.absolute()), 'converted.log')
 
 if len(sys.argv) == 1:
     print('========================================')
@@ -26,6 +30,9 @@ if len(sys.argv) != 6:
     sys.stderr.write('python3 log_checker.py (test case name) (original output) (optimized output) (original log) (optimized log)')
     exit(1)
 
+def bash(command):
+    s = subprocess.check_output(command, shell=True)
+    return str(s)
 
 def colored(text, color):
     return color + text + ORIG
@@ -84,6 +91,8 @@ if o1 == o2:
                 + fix_width(str(c1) + '(' + str(h1) + ')', COST_LEN) + ' --> ' \
                 + fix_width(str(c2) + '(' + str(h2) + ')', COST_LEN) + '  ' \
                 + delta(r1, c1, r2, c2))
+        bash('echo ' + sys.argv[1] + ' ' + str(c1) + ' ' + str(h1) + ' >> ' + LOG_ORIGINAL)
+        bash('echo ' + sys.argv[1] + ' ' + str(c2) + ' ' + str(h2) + ' >> ' + LOG_CONVERTED)
     else:
         print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [RE] ', BLUE) \
                 + ' Return values are not same!')

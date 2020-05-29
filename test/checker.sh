@@ -17,6 +17,9 @@ fi
 
 echo Case test for our own testcases has been started
 
+echo "" > $DIR/original.log
+echo "" > $DIR/converted.log
+
 for tc in $dir/ours/*; do
   echo Testing $tc/
 

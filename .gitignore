@@ -6,3 +6,5 @@ obj
 .tmp.s
 bin
 src/core/LLVMPath.h
+test/converted.log
+test/original.log

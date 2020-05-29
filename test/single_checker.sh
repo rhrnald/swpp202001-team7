@@ -17,6 +17,9 @@ fi
 
 echo Testing $tc/
 
+echo "" > $DIR/original.log
+echo "" > $DIR/converted.log
+
 orig_ll=$tc/src/*.ll
 bef_s=$tc/"bef.s"
 aft_s=$tc/"aft.s"

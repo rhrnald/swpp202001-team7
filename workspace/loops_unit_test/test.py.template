@@ -1,0 +1,54 @@
+# Should be built by releaseassert version!!
+import os, pathlib, subprocess
+
+# Bash Output Extracter
+def bash(command):
+    tmp = '.tmp'
+    subprocess.check_output(command + ' 2>' + tmp, shell=True)
+    tmpfile = open(tmp, 'r')
+    s = tmpfile.read()
+    tmpfile.close()
+    subprocess.check_output('rm ' + tmp, shell=True)
+    return s
+
+# Input IR files
+UNROLL = 'unroll.ll'
+INTERCHANGE = 'interchange.ll'
+NOT_INTERCHANGE = 'not_interchange.ll'
+
+# These passes are (subset) identical to the main.cpp
+UNROLL_PASSES = '-loop-rotate -loop-unroll -unroll-runtime -unroll-count=8'
+INTERCHANGE_PASSES = '-loop-simplifycfg -loop-rotate -loop-interchange'
+
+path = str(pathlib.Path(__file__).parent.absolute())
+
+
+# ============== start test ====================
+print('Loop Test Start')
+
+# loop unroll test
+print('> Loop Unroll Test')
+LL_unroll = os.path.join(path, UNROLL)
+output = bash(LLVM_BIN + "/opt " + UNROLL_PASSES + " " + LL_unroll + " -debug-only=loop-unroll -analyze")
+if output.find('UNROLLING loop') != -1:
+    print('>> [PASSED] Loops successfully unrolled')
+else:
+    print('>> [NOT PASSED] Loops unroll test failed...')
+
+# loop interchange test
+print('> Loop Interchange Test')
+LL_interchange = os.path.join(path, INTERCHANGE)
+output = bash(LLVM_BIN + "/opt " + INTERCHANGE_PASSES + " " + LL_interchange + " -debug-only=loop-interchange -analyze")
+if output.find('Loops interchanged') != -1:
+    print('>> [PASSED] Loops successfully interchanged')
+else:
+    print('>> [NOT PASSED] Loops interchange test failed...')
+
+LL_not_interchange = os.path.join(path, NOT_INTERCHANGE)
+output = bash(LLVM_BIN + "/opt " + INTERCHANGE_PASSES + " " + LL_not_interchange + " -debug-only=loop-interchange -analyze")
+if output.find('Loops interchanged') != -1:
+    print('>> [NOT PASSED] Loops interchange test failed... (unnecessary interchange)')
+else:
+    print('>> [PASSED] Loops interchange pass calculated the payoff correctly')
+
+print('Loop Test End')

@@ -106,10 +106,10 @@ int main(int argc, char **argv) {
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
   // Loop builtin optimizations
-  string LoopPrePasses = "-loop-simplify -loop-deletion";
-  string LoopBasicPasses = "-lcssa -licm -loop-vectorize -loop-unswitch -loop-distribute -loop-data-prefetch -loop-idiom -loop-simplifycfg -loop-rotate";
-  string LoopMainPasses = "-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8";
-  string LoopEndPasses = "-gvn -aggressive-instcombine";
+  string LoopPrePasses = "-loop-simplify -loop-deletion -lcssa -licm -loop-distribute";
+  string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-reduce -loop-simplifycfg -loop-rotate";
+  string LoopMainPasses = "-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder";
+  string LoopEndPasses = "-instcombine -simplifycfg -loop-instsimplify -gvn -instcombine -aggressive-instcombine";
 
   runBuiltinOpt(LoopPrePasses, M);
   runBuiltinOpt(LoopBasicPasses, M);

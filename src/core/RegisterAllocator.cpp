@@ -94,8 +94,7 @@ public:
    */
   Instruction *evict(unsigned RegId = 0) {
     if (ActiveSet.size() == 0) return nullptr;
-    if (RegId) assert(FreeRegisters.count(RegId) == 0 &&
-                      TempRegisters.count(RegId) == 0);
+    if (RegId) assert(TempRegisters.count(RegId) == 0);
     auto Victim = getVictim(RegId);
     auto VictimRequester = (*Victim)->Requester;
     auto VictimId = (*Victim)->RegId;

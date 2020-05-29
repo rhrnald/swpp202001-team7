@@ -25,3 +25,4 @@ int main() {
   write(*p_out);
   return 0;
 }
+

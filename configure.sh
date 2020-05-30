@@ -38,5 +38,5 @@ cat Makefile.template >>Makefile
 echo "// Well modified by configure.sh" > src/core/LLVMPath.h
 echo "#define LLVM_BIN \"$1\"" >> src/core/LLVMPath.h
 
-echo "LLVM_BIN = \"$1\"" > workspace/loops_unit_test/test.py
-cat workspace/loops_unit_test/test.py.template >> workspace/loops_unit_test/test.py
+echo "LLVM_BIN = \"$1\"" > test/loops_unit_test/test.py
+cat test/loops_unit_test/test.py.template >> test/loops_unit_test/test.py

@@ -1,5 +1,3 @@
-#ifdef REORDER_MEM_ACCESS
-
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IRBuilder.h"
@@ -8,10 +6,12 @@
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
 
-#include "../passes/ReorderMemAccess.h"
+#include "../passes/Wrapper.h"
 
 using namespace llvm;
 using namespace std;
+
+#ifdef REORDER_MEM_ACCESS
 
 TEST(PassCheck, ReorderMemAccessTest) {
   // Create an IR Module.
@@ -31,15 +31,15 @@ TEST(PassCheck, ReorderMemAccessTest) {
 
   //Allocate
   auto *m1 = EntryBuilder.CreateCall(MallocF, ConstantInt::get(Type::getInt64Ty(Context), 8), "p1");
-  auto *s1 = EntryBuilder.CreateAlloca(Type::getInt8PtrTy(Context), nullptr, "q1");
+  auto *s1 = EntryBuilder.CreateAlloca(Type::getInt8Ty(Context));
   auto *m2 = EntryBuilder.CreateCall(MallocF, ConstantInt::get(Type::getInt64Ty(Context), 8), "p2");
-  auto *s2 = EntryBuilder.CreateAlloca(Type::getInt8PtrTy(Context), nullptr, "q2");
+  auto *s2 = EntryBuilder.CreateAlloca(Type::getInt8Ty(Context));
 
   //Load/Store
-  auto *ms1 = EntryBuilder.CreateStore(m1, ConstantInt::get(Type::getInt8Ty(Context), 1));
-  auto *ss1 = EntryBuilder.CreateStore(s1, ConstantInt::get(Type::getInt8Ty(Context), 1));
-  auto *ms2 = EntryBuilder.CreateStore(m2, ConstantInt::get(Type::getInt8Ty(Context), 1));
-  auto *ss2 = EntryBuilder.CreateStore(s2, ConstantInt::get(Type::getInt8Ty(Context), 1));
+  auto *ms1 = EntryBuilder.CreateStore(ConstantInt::get(Type::getInt8Ty(Context), 1), m1);
+  auto *ss1 = EntryBuilder.CreateStore(ConstantInt::get(Type::getInt8Ty(Context), 1), s1);
+  auto *ms2 = EntryBuilder.CreateStore(ConstantInt::get(Type::getInt8Ty(Context), 1), m2);
+  auto *ss2 = EntryBuilder.CreateStore(ConstantInt::get(Type::getInt8Ty(Context), 1), s2);
 
   //Exit Block
   BasicBlock *Exit = BasicBlock::Create(Context, "exit", TestF);

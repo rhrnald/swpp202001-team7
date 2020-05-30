@@ -10,7 +10,7 @@ using namespace std;
 
 
 enum AllocType {
-  STACK, HEAP, UNKNOWN
+  STACK, HEAP, UNKNOWN, CALL
 };
 
 static bool isMallocCall(const CallInst *CI) {
@@ -31,15 +31,20 @@ static bool isMallocCall(const CallInst *CI) {
 static bool isAllocaByteCall(const CallInst *CI) {
   return CI->getCalledFunction()->getName() == "__alloca_bytes__";
 }
-
+static bool isFreeCall(const CallInst *CI) {
+  return CI->getCalledFunction()->getName() == "free";
+}
 // A very simple getBlockType().
 // Sees which memory area V is pointing to.
 AllocType getBlockType(const Value *V) {
   if (auto *CI = dyn_cast<CallInst>(V)) {
     if (isMallocCall(CI))
       return HEAP;
+    if (isFreeCall(CI))
+      return HEAP;
     if (isAllocaByteCall(CI)) 
       return STACK;
+    return CALL;
   } else if (auto *AI = dyn_cast<AllocaInst>(V)) {
     return STACK;
   } else if (auto *BI = dyn_cast<BitCastInst>(V)) {
@@ -62,6 +67,7 @@ AllocType getBlockType(const Value *V) {
 bool checkDom(Instruction* I, Instruction* J) {
   int Itype=getBlockType(I);
   int Jtype=getBlockType(J);
+  if(Itype==CALL || Jtype==CALL) return true;
   if(Itype==Jtype && (Itype!=UNKNOWN)) return true;
 
   /*for(auto ptr : J->getOperandList()) {

@@ -169,10 +169,10 @@ int main(int argc, char **argv) {
     MPM.addPass(CheckConstExpr());
   if (!excepted("PackRegisters", exceptList))
     MPM.addPass(PackRegisters());
-  /*
+  
   if (!excepted("ReorderMemAccess", exceptList))
     MPM.addPass(ReorderMemAccess());
-    */
+    
   if (!excepted("WeirdArithmetic", exceptList))
     MPM.addPass(WeirdArithmetic());
 

@@ -410,10 +410,12 @@ public:
            "Alloca is not in the entry block; this algorithm wouldn't work");
 
     checkSrcType(I.getAllocatedType());
+    unsigned RegId = requestRegister(&I);
     // This will be lowered to 'r1 = add sp, <offset>'
     auto *NewAllc = Builder->CreateAlloca(I.getAllocatedType(),
-                                          I.getArraySize(), assemblyRegisterName(1));
-    emitStoreToSrcRegister(NewAllc, &I);
+                                          I.getArraySize(), assemblyRegisterName(RegId));
+    SourceToEmitMap[&I] = NewAllc;
+    //emitStoreToSrcRegister(NewAllc, &I);
   }
   void visitLoadInst(LoadInst &LI) {
     checkSrcType(LI.getType());
@@ -441,19 +443,22 @@ public:
     auto *Ty = SI.getValueOperand()->getType();
     checkSrcType(Ty);
 
-    auto *TgtValOp = translateSrcOperandToTgt(SI.getValueOperand(), &SI, 1);
+    RA->reportUser(&SI);
+    unsigned RegId = 0;
+    auto *TgtValOp = translateSrcOperandToTgt(SI.getValueOperand(), &SI, &RegId);
     checkTgtType(TgtValOp->getType());
     if (TgtValOp->getType() != Ty) {
       // 64bit -> Ty bit trunc is needed.
       // after_trunc__ will be recognized by the assembler & merged with 64-bit
       // store into a smaller store.
-      string R0Trunc = assemblyRegisterName(1) + "after_trunc__";
+      string R0Trunc = assemblyRegisterName(RegId) + "after_trunc__";
       assert(Ty->isIntegerTy() && TgtValOp->getType()->isIntegerTy());
       TgtValOp = Builder->CreateTrunc(TgtValOp, Ty, R0Trunc);
     }
 
-    auto *TgtPtrOp = translateSrcOperandToTgt(SI.getPointerOperand(), &SI, 2);
+    auto *TgtPtrOp = translateSrcOperandToTgt(SI.getPointerOperand(), &SI, &RegId);
     Builder->CreateStore(TgtValOp, TgtPtrOp);
+    RA->reportUser(nullptr);
   }
 
   // ---- Arithmetic operations ----
@@ -897,20 +902,21 @@ private:
   queue<Instruction *> garbages;
 
 public:
-  void visitInstruction(Instruction &I) {
-    if (I.hasName() && I.getNumUses() == 0) {
+  void visitAllocaInst(AllocaInst &I) {
+    if (I.getNumUses() == 0) {
       garbages.push(&I);
     }
   }
 
   void eliminate() {
+    unsigned cnt = 0;
     while (!garbages.empty()) {
       outs() << "GSE: eliminate " << *garbages.front() << "\n";
-      garbages.front()->removeFromParent();
+      garbages.front()->setName(garbages.front()->getName() + "_garbage");
       garbages.pop();
     }
+    if (cnt) outs() << "Garbage Slot Elimination DONE! " << cnt << " slots are eliminated." << "\n";
   }
-
 };
 
 PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
@@ -938,7 +944,7 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   Deprom.visit(M);
 
   GarbageSlotEliminator GSE;
-  GSE.visit(M);
+  GSE.visit(*Deprom.getDepromotedModule());
   GSE.eliminate();
 
   if (verifyModule(M, &errs(), nullptr)) {

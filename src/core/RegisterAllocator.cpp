@@ -26,6 +26,7 @@ private:
   stack<unsigned> FreeRegisters;
   set<unsigned> TempRegisters;
   vector<Allocation *> ActiveSet;
+  Instruction *CurrentUser;
 
   unsigned allocateNewRegister() {
     if (FreeRegisters.empty()) return 0;
@@ -45,8 +46,10 @@ private:
       }
     }
     else {
-      // random policy
-      Victim = ActiveSet.begin() + (rand() % ActiveSet.size());
+      // random policy - do not evict the currently used one!
+      do {
+        Victim = ActiveSet.begin() + (rand() % ActiveSet.size());
+      } while (CurrentUser && (*Victim)->LastUser == CurrentUser);
     }
     assert(Victim != ActiveSet.end());
     return Victim;
@@ -58,6 +61,7 @@ public:
     for (unsigned i = MAX_REG_N; i >= MIN_REG_N; --i) {
       FreeRegisters.push(i);
     }
+    CurrentUser = nullptr;
   }
 
   /*
@@ -159,5 +163,9 @@ public:
            "Cannot give up an unrequested temp register.");
     TempRegisters.erase(RegId);
     FreeRegisters.push(RegId);
+  }
+
+  void reportUser(Instruction *U) {
+    CurrentUser = U;
   }
 };

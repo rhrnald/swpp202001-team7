@@ -63,6 +63,7 @@ private:
   RegisterAllocator *RA;
   map<Instruction *, queue<unsigned>> AdventMap;  // holds next advent timesteps
   map<Instruction *, Value *> SourceToEmitMap;
+  BasicBlock *CurrentBlock;
 
   void raiseError(Instruction &I) {
     errs() << "DepromoteRegisters: Unsupported Instruction: " << I << "\n";
@@ -137,7 +138,7 @@ private:
   void evict(RegisterAllocator::Allocation *Alloc) {
     Instruction *Victim = Alloc->Source;
     Instruction *LastUser = Alloc->LastUser;
-    if (!AdventMap[Victim].empty() ||
+    if (Victim->getParent() == CurrentBlock) if (!AdventMap[Victim].empty() ||
         !LastUser || FinalUses[LastUser->getParent()].count(Victim) == 0) {
       // must spill
       emitStoreToSrcRegister(SourceToEmitMap[Victim], Victim);
@@ -351,6 +352,7 @@ public:
 
     AdventMap.clear();
     SourceToEmitMap.clear();
+    CurrentBlock = &BB;
     unsigned timestep = 0;
     for (auto &I : BB) {
       if (!isa<PHINode>(&I)) {
@@ -485,58 +487,65 @@ public:
     default: raiseError(BO); break;
     }
 
-    auto *Op1 = translateSrcOperandToTgt(BO.getOperand(0), &BO, 1);
-    auto *Op2 = translateSrcOperandToTgt(BO.getOperand(1), &BO, 2);
+    RA->reportUser(&BO);
+    unsigned RegId1 = 0, RegId2 = 0;
+    auto *Op1 = translateSrcOperandToTgt(BO.getOperand(0), &BO, &RegId1);
+    auto *Op2 = translateSrcOperandToTgt(BO.getOperand(1), &BO, &RegId2);
     auto *Op1Trunc = Builder->CreateTruncOrBitCast(Op1, Ty,
-        assemblyRegisterName(1) + "after_trunc__");
+        assemblyRegisterName(RegId1) + "after_trunc__");
     auto *Op2Trunc = Builder->CreateTruncOrBitCast(Op2, Ty,
-        assemblyRegisterName(2) + "after_trunc__");
+        assemblyRegisterName(RegId2) + "after_trunc__");
+    RA->reportUser(nullptr);
 
     Value *Res = nullptr;
+    string Reg = assemblyRegisterName(requestRegister(&BO));
     if (Ty != I64Ty) {
-      Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc,
-                                 assemblyRegisterName(1) + "before_zext__");
-      Res = Builder->CreateZExt(Res, I64Ty, assemblyRegisterName(1));
+      Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc, Reg + "before_zext__");
+      Res = Builder->CreateZExt(Res, I64Ty, Reg);
     } else {
-      Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc,
-                                 assemblyRegisterName(1));
+      Res = Builder->CreateBinOp(Opcode, Op1Trunc, Op2Trunc, Reg);
     }
-    emitStoreToSrcRegister(Res, &BO);
+    SourceToEmitMap[&BO] = Res;
   }
   void visitICmpInst(ICmpInst &II) {
     auto *OpTy = II.getOperand(0)->getType();
     checkSrcType(II.getType());
     checkSrcType(OpTy);
 
-    auto *Op1 = translateSrcOperandToTgt(II.getOperand(0), &II, 1);
-    auto *Op2 = translateSrcOperandToTgt(II.getOperand(1), &II, 2);
+    RA->reportUser(&II);
+    unsigned RegId1 = 0, RegId2 = 0;
+    auto *Op1 = translateSrcOperandToTgt(II.getOperand(0), &II, &RegId1);
+    auto *Op2 = translateSrcOperandToTgt(II.getOperand(1), &II, &RegId2);
     auto *Op1Trunc = Builder->CreateTruncOrBitCast(Op1, OpTy,
-        assemblyRegisterName(1) + "after_trunc__");
+        assemblyRegisterName(RegId1) + "after_trunc__");
     auto *Op2Trunc = Builder->CreateTruncOrBitCast(Op2, OpTy,
-        assemblyRegisterName(2) + "after_trunc__");
+        assemblyRegisterName(RegId2) + "after_trunc__");
+    RA->reportUser(nullptr);
 
     // i1 -> i64 zext
-    string Reg = assemblyRegisterName(1);
+    string Reg = assemblyRegisterName(requestRegister(&II));
     string Reg_before_zext = Reg + "before_zext__";
-    emitStoreToSrcRegister(
-      Builder->CreateZExt(
-        Builder->CreateICmp(II.getPredicate(), Op1Trunc, Op2Trunc,
-        Reg_before_zext), I64Ty, Reg),
-      &II);
+    Value *Res = Builder->CreateZExt(Builder->CreateICmp(
+                          II.getPredicate(), Op1Trunc, Op2Trunc,
+                          Reg_before_zext), I64Ty, Reg);
+    SourceToEmitMap[&II] = Res;
   }
   void visitSelectInst(SelectInst &SI) {
     auto *Ty = SI.getType();
-    auto *OpCond = translateSrcOperandToTgt(SI.getOperand(0), &SI, 1);
+    RA->reportUser(&SI);
+    unsigned RegId = 0;
+    auto *OpCond = translateSrcOperandToTgt(SI.getOperand(0), &SI, &RegId);
     assert(OpCond->getType() == I64Ty);
     // i64 -> i1 trunc
-    string R1Trunc = assemblyRegisterName(1) + "after_trunc__";
+    string R1Trunc = assemblyRegisterName(RegId) + "after_trunc__";
     OpCond = Builder->CreateTrunc(OpCond, I1Ty, R1Trunc);
 
-    auto *OpLeft = translateSrcOperandToTgt(SI.getOperand(1), &SI, 2);
-    auto *OpRight = translateSrcOperandToTgt(SI.getOperand(2), &SI, 3);
-    emitStoreToSrcRegister(
-      Builder->CreateSelect(OpCond, OpLeft, OpRight, assemblyRegisterName(1)),
-      &SI);
+    auto *OpLeft = translateSrcOperandToTgt(SI.getOperand(1), &SI, &RegId);
+    auto *OpRight = translateSrcOperandToTgt(SI.getOperand(2), &SI, &RegId);
+    RA->reportUser(nullptr);
+    RegId = requestRegister(&SI);
+    SourceToEmitMap[&SI] = Builder->CreateSelect(OpCond, OpLeft, OpRight,
+                                                 assemblyRegisterName(RegId));
   }
   void visitGetElementPtrInst(GetElementPtrInst &GEPI) {
     // Make it look like 'gep i8* ptr, i'
@@ -914,6 +923,7 @@ public:
       outs() << "GSE: eliminate " << *garbages.front() << "\n";
       garbages.front()->setName(garbages.front()->getName() + "_garbage");
       garbages.pop();
+      cnt += 1;
     }
     if (cnt) outs() << "Garbage Slot Elimination DONE! " << cnt << " slots are eliminated." << "\n";
   }

@@ -3,6 +3,7 @@
 #include <stack>
 #include <set>
 #include <cstdlib>
+#include <algorithm>
 
 // Since the current Backend is using r1-r3, let's just use r4-r16.
 #define MAX_REG_N 16
@@ -28,6 +29,12 @@ private:
   vector<Allocation *> ActiveSet;
   Instruction *CurrentUser;
 
+  struct Comparator {
+    bool operator() (const Allocation *A1, const Allocation *A2) {
+      return A1->NextAdvent < A2->NextAdvent;
+    }
+  } Cmp;
+
   unsigned allocateNewRegister() {
     if (FreeRegisters.empty()) return 0;
     unsigned RegId = FreeRegisters.top();
@@ -47,9 +54,18 @@ private:
     }
     else {
       // random policy - do not evict the currently used one!
+      /*
       do {
         Victim = ActiveSet.begin() + (rand() % ActiveSet.size());
       } while (CurrentUser && (*Victim)->LastUser == CurrentUser);
+      */
+      // optimal policy
+      Victim = ActiveSet.begin();
+      while (CurrentUser && (*Victim)->LastUser == CurrentUser) {
+        pop_heap(Victim, ActiveSet.end(), Cmp);
+        Victim += 1;
+        assert(Victim != ActiveSet.end());
+      }
     }
     assert(Victim != ActiveSet.end());
     return Victim;
@@ -98,7 +114,7 @@ public:
     for (auto E : ActiveSet) if (E->Source == Source) {
       E->LastUser = User;
       E->NextAdvent = NextAdvent;
-      // TODO: make_heap
+      make_heap(ActiveSet.begin(), ActiveSet.end(), Cmp);
       return;
     }
     assert(!"update is called with an unallocated Source!");
@@ -117,6 +133,7 @@ public:
     auto VictimId = Victim->RegId;
     
     ActiveSet.erase(VictimIter);
+    make_heap(ActiveSet.begin(), ActiveSet.end(), Cmp);
     FreeRegisters.push(VictimId);
     return Victim;
   }

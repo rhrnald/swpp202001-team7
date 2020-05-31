@@ -14,11 +14,11 @@ using namespace std;
 class RegisterAllocator {
 public:
   struct Allocation {
-    Value *EmitValue;
-    Instruction *Requester;
-    unsigned RegId;
-    Allocation(Value *V, Instruction *I, unsigned Id)
-                : EmitValue(V), Requester(I), RegId(Id) {}
+    Instruction *Source;
+    Instruction *LastUser;
+    unsigned RegId, NextAdvent;
+    Allocation(Instruction *S, unsigned RI)
+                : Source(S), LastUser(nullptr), RegId(RI), NextAdvent(0) {}
   };
 
 private:
@@ -34,7 +34,7 @@ private:
   }
 
   vector<Allocation *>::iterator getVictim(unsigned RegId) {
-    vector<Allocation *>::iterator Victim;
+    vector<Allocation *>::iterator Victim = ActiveSet.end();
     if (RegId) {
       for (auto I = ActiveSet.begin(), E = ActiveSet.end(); I != E; I++) {
         if ((*I)->RegId == RegId) {
@@ -47,6 +47,7 @@ private:
       // random policy
       Victim = ActiveSet.begin() + (rand() % ActiveSet.size());
     }
+    assert(Victim != ActiveSet.end());
     return Victim;
   }
 
@@ -59,32 +60,43 @@ public:
   }
 
   /*
-   * find V in the allocated register.
+   * find I as Source in the allocated register.
    * return the id if it exists, zero o.w.
    */
-  unsigned get(Value *V) {
+  unsigned get(Instruction *I) {
     for (auto E : ActiveSet) {
-      if (E->EmitValue == V) return E->RegId;
+      if (E->Source == I) return E->RegId;
     }
     return 0;
   }
 
   /*
-   * allocate a new register for V.
-   * return the new Allocation on success, zero o.w.
-   * the requester should fill in the Alloc->Emit.
+   * allocate a new register for Source.
+   * return the new register id on success, zero o.w.
    */
-  Allocation *request(Value *V, Instruction *I) {
+  unsigned request(Instruction *Source) {
     for (auto E : ActiveSet) {
-      assert(E->EmitValue != V && "Requested Value is already allocated.");
+      assert(E->Source != Source && "Requested Source is already allocated.");
     }
     unsigned RegId = allocateNewRegister();
     if (RegId) {
-      auto Alloc = new Allocation(V, I, RegId);
+      auto Alloc = new Allocation(Source, RegId);
       ActiveSet.push_back(Alloc);
-      return Alloc;
     }
-    return nullptr;
+    return RegId;
+  }
+
+  /*
+   * update a use information of Source.
+   */
+  void use(Instruction *Source, Instruction *User, unsigned NextAdvent) {
+    for (auto E : ActiveSet) if (E->Source == Source) {
+      E->LastUser = User;
+      E->NextAdvent = NextAdvent;
+      // TODO: make_heap
+      return;
+    }
+    assert("use is called with an unallocated Source!");
   }
 
   /*
@@ -96,12 +108,12 @@ public:
     if (ActiveSet.size() == 0) return nullptr;
     if (RegId) assert(TempRegisters.count(RegId) == 0);
     auto Victim = getVictim(RegId);
-    auto VictimRequester = (*Victim)->Requester;
+    auto VictimSource = (*Victim)->Source;
     auto VictimId = (*Victim)->RegId;
     
     ActiveSet.erase(Victim);
     FreeRegisters.push(VictimId);
-    return VictimRequester;
+    return VictimSource;
   }
 
   // Here are the methods for temp registers. One might need registers

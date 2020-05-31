@@ -13,6 +13,9 @@
 #include <memory>
 #include <queue>
 
+#define DEBUG false
+#define DEBUG_OUT() if (DEBUG) outs()
+
 using namespace llvm;
 using namespace std;
 
@@ -53,7 +56,8 @@ private:
   map<Instruction *, AllocaInst *> RegToAllocaMap;
   map<PHINode *, AllocaInst *> PhiToTempAllocaMap;
 
-  bool RefSet;  // a flag indicates whether the reference sp is set
+  bool RefSet;      // indicates whether the reference sp is set
+  bool RefSpilled;  // indicates whether the reference sp is spilled 
 
   // Register Allocation
   RegisterAllocator *RA;
@@ -97,7 +101,8 @@ private:
 
 
   string assemblyRegisterName(unsigned registerId) {
-    assert(1 <= registerId && registerId <= 16);
+    // accept zero for Constant
+    assert(0 <= registerId && registerId <= 16);
     return "__r" + to_string(registerId) + "__";
   }
   Value *emitLoadFromSrcRegister(Instruction *I, unsigned targetRegisterId) {
@@ -119,10 +124,11 @@ private:
   }
 
   // RA actions.
-
   void reportUse(Instruction *Source, Instruction *UserInst, bool pop=true) {
-    assert(!AdventMap[Source].empty() && "AdventMap should have all uses.");
     unsigned NextAdvent = RegisterAllocator::NO_MORE_ADVENT;
+    DEBUG_OUT() << "reportUse: " << Source->getName();
+    if (UserInst) DEBUG_OUT() << " used by " << UserInst->getName();
+    DEBUG_OUT() << ", pop = " << pop << " from " << AdventMap[Source].size() << "\n";
     if (pop) AdventMap[Source].pop();
     if (!AdventMap[Source].empty()) NextAdvent = AdventMap[Source].front();
     RA->update(Source, UserInst, NextAdvent);
@@ -132,7 +138,7 @@ private:
     Instruction *Victim = Alloc->Source;
     Instruction *LastUser = Alloc->LastUser;
     if (!AdventMap[Victim].empty() ||
-        FinalUses[LastUser->getParent()].count(Victim) == 0) {
+        !LastUser || FinalUses[LastUser->getParent()].count(Victim) == 0) {
       // must spill
       emitStoreToSrcRegister(SourceToEmitMap[Victim], Victim);
     }
@@ -159,16 +165,21 @@ private:
     return RegId;
   }
 
+  void clearRA() {
+    RegisterAllocator::Allocation *Alloc;
+    while ((Alloc = RA->evict())) {
+      evict(Alloc);
+    }
+  }
 
   // Encode the value of V.
   // If V is an argument, return the corresponding argN argument.
   // If V is a constant, just return it.
   // If V is an instruction, it emits load from the temporary alloca.
-  Value *translateSrcOperandToTgt(Value *V, unsigned *AllocatedId) {
-    outs() << "<!> Without OperandId Mode\n";
-    return translateSrcOperandToTgt(V, 0, AllocatedId);
+  Value *translateSrcOperandToTgt(Value *V, Instruction *U, unsigned *AllocId) {
+    return translateSrcOperandToTgt(V, U, 0, AllocId);
   }
-  Value *translateSrcOperandToTgt(Value *V, unsigned OperandId,
+  Value *translateSrcOperandToTgt(Value *V, Instruction *U, unsigned OperandId,
                                   unsigned *AllocatedId=nullptr) {
     checkSrcType(V->getType());
 
@@ -194,10 +205,23 @@ private:
     } else if (auto *I = dyn_cast<Instruction>(V)) {
       if (AllocatedId) {
         *AllocatedId = getRegister(I);
+        reportUse(I, U);
         return SourceToEmitMap[I];
       }
       else {
-        if (RA->get(I)) emitStoreToSrcRegister(SourceToEmitMap[I], I);
+        if (RA->get(I)) {
+          reportUse(I, U);
+          emitStoreToSrcRegister(SourceToEmitMap[I], I);
+        }
+        if (OperandId > 3) {
+          // handling function calls
+          if (RA->requestTempRegister(OperandId)) {
+            RA->giveUpTempRegister(OperandId);
+          }
+          else {
+            evict(RA->evict(OperandId));
+          }
+        }
         return emitLoadFromSrcRegister(I, OperandId);
       }
 
@@ -272,6 +296,8 @@ public:
     FuncToEmit = FuncMap[&F];
 
     RefSet = false;
+    RefSpilled = false;
+    RA = new RegisterAllocator();
 
     // Fill source argument -> target argument map.
     for (unsigned i = 0, e = F.arg_size(); i < e; ++i) {
@@ -321,41 +347,55 @@ public:
         }
       }
     }
+    DEBUG_OUT() << BB.getName() << ":\n";
 
-    RA = new RegisterAllocator();
     AdventMap.clear();
     SourceToEmitMap.clear();
     unsigned timestep = 0;
-    //outs() << BB << "\n";
     for (auto &I : BB) {
-      for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
-        Instruction *Op;
-        if ((Op = dyn_cast<Instruction>(I.getOperand(i)))) {
-          AdventMap[Op].push(timestep);
+      if (!isa<PHINode>(&I)) {
+        for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
+          Instruction *Op = dyn_cast<Instruction>(I.getOperand(i));
+          if (Op) {
+            AdventMap[Op].push(timestep);
+          }
         }
       }
-      //outs() << timestep << ": " << I << "\n";
+      if (I.isTerminator() && !isa<ReturnInst>(&I)) {
+        for (unsigned i = 0, e = I.getNumSuccessors(); i < e; ++i) {
+          for (auto &Phi : I.getSuccessor(i)->phis()) {
+            auto *InPhi = dyn_cast<Instruction>(Phi.getIncomingValueForBlock(&BB));
+            if (InPhi) {
+              AdventMap[InPhi].push(timestep);
+            }
+          }
+        }
+      }
+      DEBUG_OUT() << timestep << ": " << I << "\n";
       timestep += 1;
     }
-    /* debug 
-    outs() << "AdventMap:\n";
-    for (auto &[I, Q] : AdventMap) {
-      outs() << I->getName() << ":";
-      while (!Q.empty()) {
-        outs() << " " << Q.front();
-        Q.pop();
+    if (DEBUG) {
+      outs() << "AdventMap:\n";
+      for (auto &[I, _Q] : AdventMap) {
+        queue<unsigned> Q = _Q;
+        outs() << I->getName() << ":";
+        while (!Q.empty()) {
+          outs() << " " << Q.front();
+          Q.pop();
+        }
+        outs() << "\n";
+      }
+      outs() << "FinalUses:\n";
+      for (auto I : FinalUses[&BB]) {
+        outs() << " - " << I->getName() << "\n";
       }
       outs() << "\n";
     }
-    outs() << "FinalUses:\n";
-    for (auto I : FinalUses[&BB]) {
-      outs() << " - " << I->getName() << "\n";
-    }
-    outs() << "\n";
-    */
 
     Builder = make_unique<IRBuilder<TargetFolder>>(BBToEmit,
         TargetFolder(ModuleToEmit->getDataLayout()));
+    
+    DEBUG_OUT() << "BB visit done\n";
   }
 
   // Unsupported instruction goes here.
@@ -377,29 +417,31 @@ public:
   }
   void visitLoadInst(LoadInst &LI) {
     checkSrcType(LI.getType());
-    auto *TgtPtrOp = translateSrcOperandToTgt(LI.getPointerOperand(), 1);
+    unsigned RegId = 0;
+    auto *TgtPtrOp = translateSrcOperandToTgt(LI.getPointerOperand(), &LI, &RegId);
     auto *LoadedTy = TgtPtrOp->getType()->getPointerElementType();
     Value *LoadedVal = nullptr;
 
+    RegId = requestRegister(&LI);
+    string Reg = assemblyRegisterName(RegId);
     if (LoadedTy->isIntegerTy() && LoadedTy->getIntegerBitWidth() < 64) {
       // Need to zext.
       // before_zext__ will be recognized by the assembler & merged with 64-bit
       // load to a smaller load.
-      string Reg = assemblyRegisterName(1);
       string RegBeforeZext = Reg + "before_zext__";
       LoadedVal = Builder->CreateLoad(TgtPtrOp, RegBeforeZext);
       LoadedVal = Builder->CreateZExt(LoadedVal, I64Ty, Reg);
     } else {
-      LoadedVal = Builder->CreateLoad(TgtPtrOp, assemblyRegisterName(1));
+      LoadedVal = Builder->CreateLoad(TgtPtrOp, Reg);
     }
     checkTgtType(LoadedVal->getType());
-    emitStoreToSrcRegister(LoadedVal, &LI);
+    SourceToEmitMap[&LI] = LoadedVal;
   }
   void visitStoreInst(StoreInst &SI) {
     auto *Ty = SI.getValueOperand()->getType();
     checkSrcType(Ty);
 
-    auto *TgtValOp = translateSrcOperandToTgt(SI.getValueOperand(), 1);
+    auto *TgtValOp = translateSrcOperandToTgt(SI.getValueOperand(), &SI, 1);
     checkTgtType(TgtValOp->getType());
     if (TgtValOp->getType() != Ty) {
       // 64bit -> Ty bit trunc is needed.
@@ -410,7 +452,7 @@ public:
       TgtValOp = Builder->CreateTrunc(TgtValOp, Ty, R0Trunc);
     }
 
-    auto *TgtPtrOp = translateSrcOperandToTgt(SI.getPointerOperand(), 2);
+    auto *TgtPtrOp = translateSrcOperandToTgt(SI.getPointerOperand(), &SI, 2);
     Builder->CreateStore(TgtValOp, TgtPtrOp);
   }
 
@@ -438,8 +480,8 @@ public:
     default: raiseError(BO); break;
     }
 
-    auto *Op1 = translateSrcOperandToTgt(BO.getOperand(0), 1);
-    auto *Op2 = translateSrcOperandToTgt(BO.getOperand(1), 2);
+    auto *Op1 = translateSrcOperandToTgt(BO.getOperand(0), &BO, 1);
+    auto *Op2 = translateSrcOperandToTgt(BO.getOperand(1), &BO, 2);
     auto *Op1Trunc = Builder->CreateTruncOrBitCast(Op1, Ty,
         assemblyRegisterName(1) + "after_trunc__");
     auto *Op2Trunc = Builder->CreateTruncOrBitCast(Op2, Ty,
@@ -461,8 +503,8 @@ public:
     checkSrcType(II.getType());
     checkSrcType(OpTy);
 
-    auto *Op1 = translateSrcOperandToTgt(II.getOperand(0), 1);
-    auto *Op2 = translateSrcOperandToTgt(II.getOperand(1), 2);
+    auto *Op1 = translateSrcOperandToTgt(II.getOperand(0), &II, 1);
+    auto *Op2 = translateSrcOperandToTgt(II.getOperand(1), &II, 2);
     auto *Op1Trunc = Builder->CreateTruncOrBitCast(Op1, OpTy,
         assemblyRegisterName(1) + "after_trunc__");
     auto *Op2Trunc = Builder->CreateTruncOrBitCast(Op2, OpTy,
@@ -479,21 +521,21 @@ public:
   }
   void visitSelectInst(SelectInst &SI) {
     auto *Ty = SI.getType();
-    auto *OpCond = translateSrcOperandToTgt(SI.getOperand(0), 1);
+    auto *OpCond = translateSrcOperandToTgt(SI.getOperand(0), &SI, 1);
     assert(OpCond->getType() == I64Ty);
     // i64 -> i1 trunc
     string R1Trunc = assemblyRegisterName(1) + "after_trunc__";
     OpCond = Builder->CreateTrunc(OpCond, I1Ty, R1Trunc);
 
-    auto *OpLeft = translateSrcOperandToTgt(SI.getOperand(1), 2);
-    auto *OpRight = translateSrcOperandToTgt(SI.getOperand(2), 3);
+    auto *OpLeft = translateSrcOperandToTgt(SI.getOperand(1), &SI, 2);
+    auto *OpRight = translateSrcOperandToTgt(SI.getOperand(2), &SI, 3);
     emitStoreToSrcRegister(
       Builder->CreateSelect(OpCond, OpLeft, OpRight, assemblyRegisterName(1)),
       &SI);
   }
   void visitGetElementPtrInst(GetElementPtrInst &GEPI) {
     // Make it look like 'gep i8* ptr, i'
-    auto *PtrOp = translateSrcOperandToTgt(GEPI.getPointerOperand(), 1);
+    auto *PtrOp = translateSrcOperandToTgt(GEPI.getPointerOperand(), &GEPI, 1);
     auto *PtrI8Op = Builder->CreateBitCast(PtrOp, I8PtrTy,
                                            assemblyRegisterName(1));
     unsigned Idx = 1;
@@ -502,7 +544,7 @@ public:
     while (Idx <= GEPI.getNumIndices()) {
       assert(GEPI.getOperand(Idx)->getType() == I64Ty &&
              "We only accept getelementptr with indices of 64 bits.");
-      auto *IdxValue = translateSrcOperandToTgt(GEPI.getOperand(Idx), 2);
+      auto *IdxValue = translateSrcOperandToTgt(GEPI.getOperand(Idx), &GEPI, 2);
 
       auto *ElemTy = CurrentPtrTy->getPointerElementType();
       unsigned sz = getAccessSize(ElemTy);
@@ -534,7 +576,7 @@ public:
 
   // ---- Casts ----
   void visitBitCastInst(BitCastInst &BCI) {
-    auto *Op = translateSrcOperandToTgt(BCI.getOperand(0), 1);
+    auto *Op = translateSrcOperandToTgt(BCI.getOperand(0), &BCI, 1);
     auto *CastedOp = Builder->CreateBitCast(Op, BCI.getType(),
         assemblyRegisterName(1));
     emitStoreToSrcRegister(CastedOp, &BCI);
@@ -542,7 +584,7 @@ public:
   void visitSExtInst(SExtInst &SI) {
     // Get the sign bit.
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
-    auto *Op = translateSrcOperandToTgt(SI.getOperand(0), 1);
+    auto *Op = translateSrcOperandToTgt(SI.getOperand(0), &SI, 1);
     if (bw < 64) {
       Op =
         Builder->CreateMul(Op, ConstantInt::get(I64Ty, (1llu << (64 - bw))),
@@ -554,11 +596,11 @@ public:
   }
   void visitZExtInst(ZExtInst &ZI) {
     // Everything is zero-extended by default.
-    auto *Op = translateSrcOperandToTgt(ZI.getOperand(0), 1);
+    auto *Op = translateSrcOperandToTgt(ZI.getOperand(0), &ZI, 1);
     emitStoreToSrcRegister(Op, &ZI);
   }
   void visitTruncInst(TruncInst &TI) {
-    auto *Op = translateSrcOperandToTgt(TI.getOperand(0), 1);
+    auto *Op = translateSrcOperandToTgt(TI.getOperand(0), &TI, 1);
     uint64_t Divisor = (1llu << (TI.getDestTy()->getIntegerBitWidth()));
     emitStoreToSrcRegister(
       Builder->CreateURem(Op, ConstantInt::get(I64Ty, Divisor), 
@@ -566,13 +608,13 @@ public:
       &TI);
   }
   void visitPtrToIntInst(PtrToIntInst &PI) {
-    auto *Op = translateSrcOperandToTgt(PI.getOperand(0), 1);
+    auto *Op = translateSrcOperandToTgt(PI.getOperand(0), &PI, 1);
     emitStoreToSrcRegister(
       Builder->CreatePtrToInt(Op, I64Ty, assemblyRegisterName(1)),
       &PI);
   }
   void visitIntToPtrInst(IntToPtrInst &II) {
-    auto *Op = translateSrcOperandToTgt(II.getOperand(0), 1);
+    auto *Op = translateSrcOperandToTgt(II.getOperand(0), &II, 1);
     emitStoreToSrcRegister(
       Builder->CreateIntToPtr(Op, II.getType(), assemblyRegisterName(1)),
       &II);
@@ -587,16 +629,25 @@ public:
     if (!RefSet && CalledF->getName() == SetRefName) {
       RefSet = true;
       // Now the reference sp is set. Prepare for it!
+      unsigned GotId = RA->requestTempRegister(RefSPId);
+      if (GotId == 0) {
+        evict(RA->evict(RefSPId));
+        GotId = RA->requestTempRegister(RefSPId);
+      }
     }
     else if (RefSet && CalledF->getName() == SpillRefName) {
       // The reference sp is spilled for the moment. Enjoy!
       // However, don't forget that RefSet is still true!
+      RefSpilled = true;
+    }
+    else if (RefSpilled) {
+      RA->giveUpTempRegister(RefSPId);
     }
 
     SmallVector<Value *, 16> Args;
     unsigned Idx = 1;
     for (auto I = CI.arg_begin(), E = CI.arg_end(); I != E; ++I) {
-      Args.emplace_back(translateSrcOperandToTgt(*I, Idx));
+      Args.emplace_back(translateSrcOperandToTgt(*I, &CI, Idx));
       if(!isa<Constant>(&*I)) ++Idx;  // constants don't need registers
     }
     if (CI.hasName()) {
@@ -606,12 +657,20 @@ public:
     } else {
       Builder->CreateCall(CalledFInTgt, Args);
     }
+
+    if (RefSpilled && CalledF->getName() != SpillRefName) {
+      if (RA->requestTempRegister(RefSPId) == 0) {
+        evict(RA->evict(RefSPId));
+        RA->requestTempRegister(RefSPId);
+      }
+      RefSpilled = false;
+    }
   }
 
   // ---- Terminators ----
   void visitReturnInst(ReturnInst &RI) {
     if (auto *RetVal = RI.getReturnValue())
-      Builder->CreateRet(translateSrcOperandToTgt(RetVal, 1));
+      Builder->CreateRet(translateSrcOperandToTgt(RetVal, &RI, 1));
     else
       // To `ret i64 0`
       Builder->CreateRet(
@@ -619,16 +678,18 @@ public:
   }
   void visitBranchInst(BranchInst &BI) {
     for (auto *Succ : BI.successors())
-      processPHIsInSuccessor(Succ, BI.getParent());
+      processPHIsInSuccessor(Succ, BI.getParent(), &BI);
 
     if (BI.isUnconditional()) {
+      clearRA();
       Builder->CreateBr(BBMap[BI.getSuccessor(0)]);
     } else {
-      auto *CondOp = translateSrcOperandToTgt(BI.getCondition(), 1);
+      auto *CondOp = translateSrcOperandToTgt(BI.getCondition(), &BI, 1);
       // to_i1__ is recognized by assembler.
       string regname = assemblyRegisterName(1) + "to_i1__";
       auto *Condi1 = Builder->CreateICmpNE(CondOp, ConstantInt::get(I64Ty, 0),
                                            regname);
+      clearRA();
       Builder->CreateCondBr(Condi1, BBMap[BI.getSuccessor(0)],
                                     BBMap[BI.getSuccessor(1)]);
     }
@@ -636,21 +697,24 @@ public:
   void visitSwitchInst(SwitchInst &SI) {
     // Emit phi's values first!
     for (unsigned i = 0, e = SI.getNumSuccessors(); i != e; ++i)
-      processPHIsInSuccessor(SI.getSuccessor(i), SI.getParent());
+      processPHIsInSuccessor(SI.getSuccessor(i), SI.getParent(), &SI);
 
-    auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), 1);
+    auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), &SI, 1);
     vector<pair<ConstantInt *, BasicBlock *>> TgtCases;
     for (auto I = SI.case_begin(), E = SI.case_end(); I != E; ++I) {
       auto *C = ConstantInt::get(I64Ty, I->getCaseValue()->getZExtValue());
       TgtCases.emplace_back(C, BBMap[I->getCaseSuccessor()]);
     }
+
+    clearRA();
+    
     auto *TgtSI = Builder->CreateSwitch(TgtCond, BBMap[SI.getDefaultDest()],
                                         SI.getNumCases());
     for (auto [CaseVal, CaseDest] : TgtCases)
       TgtSI->addCase(CaseVal, CaseDest);
   }
 
-  void processPHIsInSuccessor(BasicBlock *Succ, BasicBlock *BBFrom) {
+  void processPHIsInSuccessor(BasicBlock *Succ, BasicBlock *BBFrom, Instruction *U) {
     // PHIs can use each other:
     // ex)
     // loop:
@@ -668,7 +732,7 @@ public:
     //   store x, y_phi_tmp_slot
     for (auto &PHI : Succ->phis()) {
       auto *V =
-        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), 1);
+        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), U, 1);
       checkTgtType(V->getType());
       assert(!isa<Instruction>(V) || !V->hasName() ||
              V->getName().startswith("__r"));
@@ -805,11 +869,17 @@ public:
       bool ReturnBlock = isa<ReturnInst>(BB.getTerminator());
       for (auto &I : BB) {
         if (I.hasName()) AdventBlocks[&I].insert(&BB);
+        PHINode *Phi = dyn_cast<PHINode>(&I);
         for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
           auto *Op = dyn_cast<Instruction>(I.getOperand(i));
           if (Op) {
-            AdventBlocks[Op].insert(&BB);
-            if (ReturnBlock) FinalUses[&BB].insert(Op);
+            if (Phi) {
+              AdventBlocks[Op].insert(Phi->getIncomingBlock(i));
+            }
+            else {
+              AdventBlocks[Op].insert(&BB);
+              if (ReturnBlock) FinalUses[&BB].insert(Op);
+            }
           }
         }
       }

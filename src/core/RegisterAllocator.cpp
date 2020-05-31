@@ -97,7 +97,7 @@ public:
       // TODO: make_heap
       return;
     }
-    assert("update is called with an unallocated Source!");
+    assert(!"update is called with an unallocated Source!");
   }
 
   /*
@@ -137,12 +137,11 @@ public:
     while (!FreeRegisters.empty()) {
       if (FreeRegisters.top() == RegId) {
         FoundId = RegId;
-        break;
       }
       else {
         Temp.push(FreeRegisters.top());
-        FreeRegisters.pop();
       }
+      FreeRegisters.pop();
     }
     // Refill the stack
     while (!Temp.empty()) {

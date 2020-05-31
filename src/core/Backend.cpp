@@ -892,6 +892,27 @@ public:
   }
 };
 
+class GarbageSlotEliminator : public InstVisitor<GarbageSlotEliminator> {
+private:
+  queue<Instruction *> garbages;
+
+public:
+  void visitInstruction(Instruction &I) {
+    if (I.hasName() && I.getNumUses() == 0) {
+      garbages.push(&I);
+    }
+  }
+
+  void eliminate() {
+    while (!garbages.empty()) {
+      outs() << "GSE: eliminate " << *garbages.front() << "\n";
+      garbages.front()->removeFromParent();
+      garbages.pop();
+    }
+  }
+
+};
+
 PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   if (verifyModule(M, &errs(), nullptr))
     exit(1);
@@ -915,6 +936,10 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   // Third, depromote registers to alloca & canonicalize iN types into i64.
   DepromoteRegisters Deprom;
   Deprom.visit(M);
+
+  GarbageSlotEliminator GSE;
+  GSE.visit(M);
+  GSE.eliminate();
 
   if (verifyModule(M, &errs(), nullptr)) {
     errs() << "BUG: DepromoteRegisters created an ill-formed module!\n";

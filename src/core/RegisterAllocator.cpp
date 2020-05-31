@@ -13,6 +13,7 @@ using namespace std;
 
 class RegisterAllocator {
 public:
+  static const unsigned NO_MORE_ADVENT = -1;
   struct Allocation {
     Instruction *Source;
     Instruction *LastUser;
@@ -63,9 +64,9 @@ public:
    * find I as Source in the allocated register.
    * return the id if it exists, zero o.w.
    */
-  unsigned get(Instruction *I) {
+  unsigned get(Instruction *Source) {
     for (auto E : ActiveSet) {
-      if (E->Source == I) return E->RegId;
+      if (E->Source == Source) return E->RegId;
     }
     return 0;
   }
@@ -89,14 +90,14 @@ public:
   /*
    * update a use information of Source.
    */
-  void use(Instruction *Source, Instruction *User, unsigned NextAdvent) {
+  void update(Instruction *Source, Instruction *User, unsigned NextAdvent) {
     for (auto E : ActiveSet) if (E->Source == Source) {
       E->LastUser = User;
       E->NextAdvent = NextAdvent;
       // TODO: make_heap
       return;
     }
-    assert("use is called with an unallocated Source!");
+    assert("update is called with an unallocated Source!");
   }
 
   /*
@@ -104,16 +105,16 @@ public:
    * return the evicted Instruction.
    * evict a specific register when RegId is given.
    */
-  Instruction *evict(unsigned RegId = 0) {
+  Allocation *evict(unsigned RegId = 0) {
     if (ActiveSet.size() == 0) return nullptr;
     if (RegId) assert(TempRegisters.count(RegId) == 0);
-    auto Victim = getVictim(RegId);
-    auto VictimSource = (*Victim)->Source;
-    auto VictimId = (*Victim)->RegId;
+    auto VictimIter = getVictim(RegId);
+    auto Victim = *VictimIter;
+    auto VictimId = Victim->RegId;
     
-    ActiveSet.erase(Victim);
+    ActiveSet.erase(VictimIter);
     FreeRegisters.push(VictimId);
-    return VictimSource;
+    return Victim;
   }
 
   // Here are the methods for temp registers. One might need registers

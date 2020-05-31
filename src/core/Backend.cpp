@@ -56,8 +56,9 @@ private:
   bool RefSet;  // a flag indicates whether the reference sp is set
 
   // Register Allocation
-  RegisterAllocator RA;
+  RegisterAllocator *RA;
   map<Instruction *, queue<unsigned>> AdventMap;  // holds next advent timesteps
+  map<Instruction *, Value *> SourceToEmitMap;
 
   void raiseError(Instruction &I) {
     errs() << "DepromoteRegisters: Unsupported Instruction: " << I << "\n";
@@ -117,11 +118,58 @@ private:
     Builder->CreateStore(V, RegToAllocaMap[I]);
   }
 
+  // RA actions.
+
+  void reportUse(Instruction *Source, Instruction *UserInst, bool pop=true) {
+    assert(!AdventMap[Source].empty() && "AdventMap should have all uses.");
+    unsigned NextAdvent = RegisterAllocator::NO_MORE_ADVENT;
+    if (pop) AdventMap[Source].pop();
+    if (!AdventMap[Source].empty()) NextAdvent = AdventMap[Source].front();
+    RA->update(Source, UserInst, NextAdvent);
+  }
+
+  void evict(RegisterAllocator::Allocation *Alloc) {
+    Instruction *Victim = Alloc->Source;
+    Instruction *LastUser = Alloc->LastUser;
+    if (!AdventMap[Victim].empty() ||
+        FinalUses[LastUser->getParent()].count(Victim) == 0) {
+      // must spill
+      emitStoreToSrcRegister(SourceToEmitMap[Victim], Victim);
+    }
+  }
+
+  unsigned requestRegister(Instruction *I) {
+    auto RegId = RA->request(I);
+    if (RegId == 0) {
+      evict(RA->evict());
+      RegId = RA->request(I);
+      assert(RegId && "request after an eviction should work!");
+    }
+    reportUse(I, nullptr, false);
+    return RegId;
+  }
+
+  unsigned getRegister(Instruction *I) {
+    auto RegId = RA->get(I);
+    if (RegId == 0) {
+      RegId = requestRegister(I);
+      // fill
+      SourceToEmitMap[I] = emitLoadFromSrcRegister(I, RegId);
+    }
+    return RegId;
+  }
+
+
   // Encode the value of V.
   // If V is an argument, return the corresponding argN argument.
   // If V is a constant, just return it.
   // If V is an instruction, it emits load from the temporary alloca.
-  Value *translateSrcOperandToTgt(Value *V, unsigned OperandId) {
+  Value *translateSrcOperandToTgt(Value *V, unsigned *AllocatedId) {
+    outs() << "<!> Without OperandId Mode\n";
+    return translateSrcOperandToTgt(V, 0, AllocatedId);
+  }
+  Value *translateSrcOperandToTgt(Value *V, unsigned OperandId,
+                                  unsigned *AllocatedId=nullptr) {
     checkSrcType(V->getType());
 
     if (auto *A = dyn_cast<Argument>(V)) {
@@ -144,7 +192,14 @@ private:
       return GVMap[GV];
 
     } else if (auto *I = dyn_cast<Instruction>(V)) {
-      return emitLoadFromSrcRegister(I, OperandId);
+      if (AllocatedId) {
+        *AllocatedId = getRegister(I);
+        return SourceToEmitMap[I];
+      }
+      else {
+        if (RA->get(I)) emitStoreToSrcRegister(SourceToEmitMap[I], I);
+        return emitLoadFromSrcRegister(I, OperandId);
+      }
 
     } else {
       assert(false && "Unknown instruction type!");
@@ -267,8 +322,9 @@ public:
       }
     }
 
-    RA = RegisterAllocator();
+    RA = new RegisterAllocator();
     AdventMap.clear();
+    SourceToEmitMap.clear();
     unsigned timestep = 0;
     //outs() << BB << "\n";
     for (auto &I : BB) {

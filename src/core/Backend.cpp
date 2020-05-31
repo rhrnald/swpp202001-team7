@@ -1,4 +1,5 @@
 #include "Backend.h"
+#include "RegisterAllocator.cpp"
 #include "llvm/Analysis/TargetFolder.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Instructions.h"
@@ -10,9 +11,12 @@
 #include <string>
 #include <sstream>
 #include <memory>
+#include <queue>
 
 using namespace llvm;
 using namespace std;
+
+map<BasicBlock *, set<Instruction *>> FinalUses;
 
 // Return sizeof(T) in bytes.
 unsigned getAccessSize(Type *T) {
@@ -50,6 +54,10 @@ private:
   map<PHINode *, AllocaInst *> PhiToTempAllocaMap;
 
   bool RefSet;  // a flag indicates whether the reference sp is set
+
+  // Register Allocation
+  RegisterAllocator RA;
+  map<Instruction *, queue<unsigned>> AdventMap;  // holds next advent timesteps
 
   void raiseError(Instruction &I) {
     errs() << "DepromoteRegisters: Unsupported Instruction: " << I << "\n";
@@ -258,6 +266,37 @@ public:
         }
       }
     }
+
+    RA = RegisterAllocator();
+    AdventMap.clear();
+    unsigned timestep = 0;
+    //outs() << BB << "\n";
+    for (auto &I : BB) {
+      for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
+        Instruction *Op;
+        if ((Op = dyn_cast<Instruction>(I.getOperand(i)))) {
+          AdventMap[Op].push(timestep);
+        }
+      }
+      //outs() << timestep << ": " << I << "\n";
+      timestep += 1;
+    }
+    /* debug 
+    outs() << "AdventMap:\n";
+    for (auto &[I, Q] : AdventMap) {
+      outs() << I->getName() << ":";
+      while (!Q.empty()) {
+        outs() << " " << Q.front();
+        Q.pop();
+      }
+      outs() << "\n";
+    }
+    outs() << "FinalUses:\n";
+    for (auto I : FinalUses[&BB]) {
+      outs() << " - " << I->getName() << "\n";
+    }
+    outs() << "\n";
+    */
 
     Builder = make_unique<IRBuilder<TargetFolder>>(BBToEmit,
         TargetFolder(ModuleToEmit->getDataLayout()));
@@ -699,6 +738,34 @@ public:
   }
 };
 
+// Following are the cases of FinalUses so far.
+// 1. an Instruction is declared and used only in one BasicBlock.
+// 2. an Instruction is used in a ReturnBlock.
+class RAHelper {
+public:
+  void visit(Function &F) {
+    map<Instruction *, set<BasicBlock *>> AdventBlocks;
+    for (auto &BB : F) {
+      bool ReturnBlock = isa<ReturnInst>(BB.getTerminator());
+      for (auto &I : BB) {
+        if (I.hasName()) AdventBlocks[&I].insert(&BB);
+        for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
+          auto *Op = dyn_cast<Instruction>(I.getOperand(i));
+          if (Op) {
+            AdventBlocks[Op].insert(&BB);
+            if (ReturnBlock) FinalUses[&BB].insert(Op);
+          }
+        }
+      }
+    }
+    for (auto &[I, S] : AdventBlocks) {
+      if(S.size() == 1) {
+        FinalUses[*S.begin()].insert(I);
+      }
+    }
+  }
+};
+
 PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   if (verifyModule(M, &errs(), nullptr))
     exit(1);
@@ -714,6 +781,10 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   // Second and half, handle AllocaBytes
   AllocaBytesHandler ABH(M);
   ABH.visit(M);
+
+  // Second and three quaters, check FinalUser
+  RAHelper RAH;
+  for (auto &F : M) RAH.visit(F);
 
   // Third, depromote registers to alloca & canonicalize iN types into i64.
   DepromoteRegisters Deprom;

@@ -1,4 +1,5 @@
 #include "PackRegisters.h"
+#include "MemUseOptimization.h"
 #include "WeirdArithmetic.h"
 #include "CheckConstExpr.h"
 #include "RemoveUnsupportedOps.h"

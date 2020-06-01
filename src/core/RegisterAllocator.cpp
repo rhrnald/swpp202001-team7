@@ -5,9 +5,8 @@
 #include <cstdlib>
 #include <algorithm>
 
-// Since the current Backend is using r1-r3, let's just use r4-r16.
 #define MAX_REG_N 16
-#define MIN_REG_N 4
+#define MIN_REG_N 1
 
 using namespace llvm;
 using namespace std;

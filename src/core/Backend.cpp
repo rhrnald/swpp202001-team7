@@ -13,8 +13,6 @@
 #include <memory>
 #include <queue>
 
-#define DEBUG false
-#define DEBUG_OUT() if (DEBUG) outs()
 
 using namespace llvm;
 using namespace std;
@@ -127,9 +125,6 @@ private:
   // RA actions.
   void reportUse(Instruction *Source, Instruction *UserInst, bool pop=true) {
     unsigned NextAdvent = RegisterAllocator::NO_MORE_ADVENT;
-    DEBUG_OUT() << "reportUse: " << Source->getName();
-    if (UserInst) DEBUG_OUT() << " used by " << UserInst->getName();
-    DEBUG_OUT() << ", pop = " << pop << " from " << AdventMap[Source].size() << "\n";
     if (pop) AdventMap[Source].pop();
     if (!AdventMap[Source].empty()) NextAdvent = AdventMap[Source].front();
     RA->update(Source, UserInst, NextAdvent);
@@ -143,7 +138,6 @@ private:
       // must spill
       emitStoreToSrcRegister(SourceToEmitMap[Victim], Victim);
     }
-    DEBUG_OUT() << "evict: r" << Alloc->RegId << " [" << Victim->getName() << "]\n";
   }
 
   unsigned requestRegister(Instruction *I) {
@@ -189,10 +183,6 @@ private:
   // If V is a constant, just return it.
   // If V is an instruction, it emits load from the temporary alloca.
   Value *translateSrcOperandToTgt(Value *V, Instruction *U, unsigned *AllocId) {
-    return translateSrcOperandToTgt(V, U, 0, AllocId);
-  }
-  Value *translateSrcOperandToTgt(Value *V, Instruction *U, unsigned OperandId,
-                                  unsigned *AllocatedId=nullptr) {
     checkSrcType(V->getType());
 
     if (auto *A = dyn_cast<Argument>(V)) {
@@ -215,27 +205,9 @@ private:
       return GVMap[GV];
 
     } else if (auto *I = dyn_cast<Instruction>(V)) {
-      if (AllocatedId) {
-        *AllocatedId = getRegister(I);
-        reportUse(I, U);
-        return SourceToEmitMap[I];
-      }
-      else {
-        if (RA->get(I)) {
-          reportUse(I, U);
-          emitStoreToSrcRegister(SourceToEmitMap[I], I);
-        }
-        if (OperandId >= MIN_REG_N) {
-          // handling function calls
-          if (RA->requestTempRegister(OperandId)) {
-            RA->giveUpTempRegister(OperandId);
-          }
-          else {
-            evict(RA->evict(OperandId));
-          }
-        }
-        return emitLoadFromSrcRegister(I, OperandId);
-      }
+      *AllocId = getRegister(I);
+      reportUse(I, U);
+      return SourceToEmitMap[I];
 
     } else {
       assert(false && "Unknown instruction type!");
@@ -359,7 +331,6 @@ public:
         }
       }
     }
-    DEBUG_OUT() << BB.getName() << ":\n";
 
     AdventMap.clear();
     SourceToEmitMap.clear();
@@ -384,31 +355,28 @@ public:
           }
         }
       }
-      DEBUG_OUT() << timestep << ": " << I << "\n";
       timestep += 1;
     }
-    if (DEBUG) {
-      outs() << "AdventMap:\n";
-      for (auto &[I, _Q] : AdventMap) {
-        queue<unsigned> Q = _Q;
-        outs() << I->getName() << ":";
-        while (!Q.empty()) {
-          outs() << " " << Q.front();
-          Q.pop();
-        }
-        outs() << "\n";
-      }
-      outs() << "FinalUses:\n";
-      for (auto I : FinalUses[&BB]) {
-        outs() << " - " << I->getName() << "\n";
+    /*
+    outs() << "AdventMap:\n";
+    for (auto &[I, _Q] : AdventMap) {
+      queue<unsigned> Q = _Q;
+      outs() << I->getName() << ":";
+      while (!Q.empty()) {
+        outs() << " " << Q.front();
+        Q.pop();
       }
       outs() << "\n";
     }
+    outs() << "FinalUses:\n";
+    for (auto I : FinalUses[&BB]) {
+      outs() << " - " << I->getName() << "\n";
+    }
+    outs() << "\n";
+    */
 
     Builder = make_unique<IRBuilder<TargetFolder>>(BBToEmit,
         TargetFolder(ModuleToEmit->getDataLayout()));
-    
-    DEBUG_OUT() << "BB visit done\n";
   }
 
   // Unsupported instruction goes here.
@@ -690,15 +658,15 @@ public:
     }
 
     SmallVector<Value *, 16> Args;
-    unsigned Idx = 1;
+    unsigned RegId;
     for (auto I = CI.arg_begin(), E = CI.arg_end(); I != E; ++I) {
-      Args.emplace_back(translateSrcOperandToTgt(*I, &CI, Idx));
-      if(!isa<Constant>(&*I)) ++Idx;  // constants don't need registers
+      Args.emplace_back(translateSrcOperandToTgt(*I, &CI, &RegId));
     }
     if (CI.hasName()) {
+      RegId = requestRegister(&CI);
       Value *Res = Builder->CreateCall(CalledFInTgt, Args,
-                                       assemblyRegisterName(1));
-      emitStoreToSrcRegister(Res, &CI);
+                                       assemblyRegisterName(RegId));
+      SourceToEmitMap[&CI] = Res;
     } else {
       Builder->CreateCall(CalledFInTgt, Args);
     }
@@ -951,7 +919,6 @@ public:
   void eliminate() {
     unsigned cnt = 0;
     while (!garbages.empty()) {
-      //outs() << "GSE: eliminate " << *garbages.front() << "\n";
       garbages.front()->setName(garbages.front()->getName() + "_garbage");
       garbages.pop();
       cnt += 1;

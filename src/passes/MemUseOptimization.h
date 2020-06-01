@@ -10,8 +10,6 @@ using namespace llvm;
 class MemUseOptimization : public PassInfoMixin<MemUseOptimization> {
     
 public:
-  Function *MainFn, *MallocFn, *AllocaBytesFn, *GetSPFn;
-  FunctionType *MainTy, *MallocTy, *GetSPTy;
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
 };
 

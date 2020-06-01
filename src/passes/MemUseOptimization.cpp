@@ -19,34 +19,26 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
   Type *I1Ty = Type::getInt1Ty(Context);
   Type *I8PtrTy = Type::getInt8PtrTy(Context);
 
-  Function *MainFn, *MallocFn, *AllocaBytesFn, *GetSPFn;
-  FunctionType *MainTy, *MallocTy, *AllocaBytesTy, *GetSPTy;
+  Function *MainFn, *MallocFn, *AllocaBytesFn, *GetSPFn, *FreeFn;
+  FunctionType *MainTy, *MallocTy, *AllocaBytesTy, *GetSPTy, *FreeTy;
 
   MallocFn = AllocaBytesFn = MainFn = GetSPFn = NULL;
   for (auto &F : M) {
     if (F.getName() == "malloc") {
-      MallocFn = &F;
-      MallocTy = dyn_cast<FunctionType>(F.getValueType());
+      MallocFn = &F, MallocTy = dyn_cast<FunctionType>(F.getValueType());
     } else if (F.getName() == "__alloca_bytes__") {
-      AllocaBytesFn = &F;
-      AllocaBytesTy = dyn_cast<FunctionType>(F.getValueType());
+      AllocaBytesFn = &F, AllocaBytesTy = dyn_cast<FunctionType>(F.getValueType());
     } else if (F.getName() == "__get_stack_pointer__") {
-      GetSPFn = &F;
-      GetSPTy = dyn_cast<FunctionType>(F.getValueType());
+      GetSPFn = &F, GetSPTy = dyn_cast<FunctionType>(F.getValueType());
+    } else if (F.getName() == "free") {
+      FreeFn = &F, FreeTy = dyn_cast<FunctionType>(F.getValueType());
     } else if (F.getName() == "main") {
-      MainFn = &F;
-      MainTy = dyn_cast<FunctionType>(F.getValueType());
+      MainFn = &F, MainTy = dyn_cast<FunctionType>(F.getValueType());
     }
   }
 
   assert(MainFn != NULL);
 
-  if (MallocFn == NULL) {
-    MallocTy = FunctionType::get(Type::getInt8PtrTy(Context),
-                              { Type::getInt64Ty(Context) }, false);
-    MallocFn = Function::Create(MallocTy, Function::ExternalLinkage,
-                                  "malloc", M);
-  }
   if (AllocaBytesFn == NULL) {
     AllocaBytesTy = FunctionType::get(Type::getInt8PtrTy(Context),
                               { Type::getInt64Ty(Context), Type::getInt64Ty(Context) }, false);
@@ -67,29 +59,29 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
 
   FunctionAnalysisManager &FAM
     = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
-  DominatorTree &DT = FAM.getResult<DominatorTreeAnalysis>(*MainFn);
-  LoopInfo LI(DT);
+  //DominatorTree &DT = ;
+  LoopInfo LI(FAM.getResult<DominatorTreeAnalysis>(*MainFn));
 
-  vector<CallInst*> Candidates;
-  CallInst *CI;
-  Instruction *CurrentSP;
+  vector<CallInst*> MallocInsts;
+  vector<CallInst*> FreeInsts;
 
   for (auto &BB : *MainFn) {
-    if (LI.getLoopFor(&BB)) {
-      continue;
-    }
+    if (LI.getLoopFor(&BB)) continue;
     for (auto &I : BB) {
-      if ((CI = dyn_cast<CallInst>(&I)) &&
-             CI->getCalledFunction() == MallocFn)
-        Candidates.push_back(CI);
+      if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+        if (CI->getCalledFunction() == MallocFn)
+          MallocInsts.push_back(CI);
+        if (CI->getCalledFunction() == FreeFn)
+          FreeInsts.push_back(CI);
+      }
     }
   }
 
-  if (Candidates.empty()) {
+  if (MallocInsts.empty()) {
     return PreservedAnalyses::all();
   }
 
-  for (auto &CI : Candidates) {
+  for (auto &CI : MallocInsts) {
     BasicBlock *BB = CI->getParent();
     BasicBlock *SplitBB = BB->splitBasicBlock(CI, "divided." + BB->getName());
     BasicBlock *AllocaBB = BasicBlock::Create(Context, "alloca." + BB->getName(), MainFn);
@@ -98,7 +90,6 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
     Value *AllocSize = CI->getOperand(0);
 
     CallInst *CurrentSP = CallInst::Create(GetSPTy, GetSPFn, {}, "cur.sp");
-    //Instruction *CurrentSP = llvm::BinaryOperator::CreateMul(AllocSize, AllocSize, "sss");
     Instruction *SubSP = llvm::BinaryOperator::CreateSub(CurrentSP, AllocSize, "lookahead.sp");
     ICmpInst *CmpSP = new ICmpInst(ICmpInst::ICMP_SGE, SubSP, ConstantInt::get(Type::getInt64Ty(Context), 5120), "cmp.sp");
     BranchInst *BrSP = BranchInst::Create(AllocaBB, MallocBB, CmpSP);
@@ -127,6 +118,31 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
     SplitBB->getInstList().push_front(Phi);
 
     CI->replaceAllUsesWith(Phi);
+    CI->eraseFromParent();
+  }
+
+  for (auto &CI : FreeInsts) {
+    BasicBlock *BB = CI->getParent();
+    BasicBlock *SplitBB = BB->splitBasicBlock(CI, "divided." + BB->getName());
+    BasicBlock *MallocBB = BasicBlock::Create(Context, "malloc." + BB->getName(), MainFn);
+
+    Value *AllocPtr = CI->getOperand(0);
+
+    PtrToIntInst *AllocPos = new PtrToIntInst(AllocPtr, Type::getInt64Ty(Context), "stack.pos");
+    ICmpInst *CmpSP = new ICmpInst(ICmpInst::ICMP_SGE, AllocPos, ConstantInt::get(Type::getInt64Ty(Context), 10240), "cmp.sp");
+    BranchInst *BrSP = BranchInst::Create(MallocBB, SplitBB, CmpSP);
+
+    BB->getInstList().pop_back();
+    BB->getInstList().push_back(AllocPos);
+    BB->getInstList().push_back(CmpSP);
+    BB->getInstList().push_back(BrSP);
+
+    CallInst *Free = CallInst::Create(FreeTy, FreeFn, {AllocPtr});
+    BranchInst *Back = BranchInst::Create(SplitBB);
+
+    MallocBB->getInstList().push_back(Free);
+    MallocBB->getInstList().push_back(Back);
+
     CI->eraseFromParent();
   }
 

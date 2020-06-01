@@ -579,16 +579,14 @@ public:
 
   // ---- Casts ----
   void visitBitCastInst(BitCastInst &BCI) {
-    unsigned RegId;
     auto *Op = translateSrcOperandToTgt(BCI.getOperand(0), &BCI);
-    RegId = requestRegister(&BCI);
+    unsigned RegId = requestRegister(&BCI);
     auto *CastedOp = Builder->CreateBitCast(Op, BCI.getType(),
                                             assemblyRegisterName(RegId));
     SourceToEmitMap[&BCI] = CastedOp;
   }
   void visitSExtInst(SExtInst &SI) {
     // Get the sign bit.
-    unsigned RegId;
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
     auto *Op = translateSrcOperandToTgt(SI.getOperand(0), &SI);
     string Reg = assemblyRegisterName(requestRegister(&SI));
@@ -874,9 +872,7 @@ public:
         for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
           auto *Op = dyn_cast<Instruction>(I.getOperand(i));
           if (Op) {
-            if (Phi) {
-              AdventBlocks[Op].insert(Phi->getIncomingBlock(i));
-            }
+            if (Phi) AdventBlocks[Op].insert(Phi->getIncomingBlock(i));
             else {
               AdventBlocks[Op].insert(&BB);
               if (ReturnBlock) FinalUses[&BB].insert(Op);
@@ -886,9 +882,7 @@ public:
       }
     }
     for (auto &[I, S] : AdventBlocks) {
-      if(S.size() == 1) {
-        FinalUses[*S.begin()].insert(I);
-      }
+      if(S.size() == 1) FinalUses[*S.begin()].insert(I);
     }
   }
 };
@@ -931,7 +925,7 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   AllocaBytesHandler ABH(M);
   ABH.visit(M);
 
-  // Second and three quaters, check FinalUser.
+  // Second and three quaters, check FinalUses.
   RAHelper RAH;
   for (auto &F : M) RAH.visit(F);
 

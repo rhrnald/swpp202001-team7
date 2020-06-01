@@ -711,8 +711,9 @@ public:
 
   // ---- Terminators ----
   void visitReturnInst(ReturnInst &RI) {
+    unsigned RegId;
     if (auto *RetVal = RI.getReturnValue())
-      Builder->CreateRet(translateSrcOperandToTgt(RetVal, &RI, 1));
+      Builder->CreateRet(translateSrcOperandToTgt(RetVal, &RI, &RegId));
     else
       // To `ret i64 0`
       Builder->CreateRet(
@@ -726,9 +727,10 @@ public:
       clearRA();
       Builder->CreateBr(BBMap[BI.getSuccessor(0)]);
     } else {
-      auto *CondOp = translateSrcOperandToTgt(BI.getCondition(), &BI, 1);
+      unsigned RegId = 0;
+      auto *CondOp = translateSrcOperandToTgt(BI.getCondition(), &BI, &RegId);
       // to_i1__ is recognized by assembler.
-      string regname = assemblyRegisterName(1) + "to_i1__";
+      string regname = assemblyRegisterName(RegId) + "to_i1__";
       auto *Condi1 = Builder->CreateICmpNE(CondOp, ConstantInt::get(I64Ty, 0),
                                            regname);
       clearRA();
@@ -740,8 +742,8 @@ public:
     // Emit phi's values first!
     for (unsigned i = 0, e = SI.getNumSuccessors(); i != e; ++i)
       processPHIsInSuccessor(SI.getSuccessor(i), SI.getParent(), &SI);
-
-    auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), &SI, 1);
+    unsigned RegId;
+    auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), &SI, &RegId);
     vector<pair<ConstantInt *, BasicBlock *>> TgtCases;
     for (auto I = SI.case_begin(), E = SI.case_end(); I != E; ++I) {
       auto *C = ConstantInt::get(I64Ty, I->getCaseValue()->getZExtValue());
@@ -772,9 +774,10 @@ public:
     //   ...
     //   store y, x_phi_tmp_slot   -->  processed by processPHIsInSuccessor
     //   store x, y_phi_tmp_slot
+    unsigned RegId;
     for (auto &PHI : Succ->phis()) {
       auto *V =
-        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), U, 1);
+        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), U, &RegId);
       checkTgtType(V->getType());
       assert(!isa<Instruction>(V) || !V->hasName() ||
              V->getName().startswith("__r"));
@@ -788,9 +791,9 @@ public:
     // PHI: Absorbing the tmp_slot
     assert(RegToAllocaMap.count(&PN));
     assert(PhiToTempAllocaMap.count(&PN));
-    Builder->CreateStore(
-      Builder->CreateLoad(PhiToTempAllocaMap[&PN], assemblyRegisterName(1)),
-      RegToAllocaMap[&PN]);
+    unsigned RegId = requestRegister(&PN);
+    SourceToEmitMap[&PN] = 
+      Builder->CreateLoad(PhiToTempAllocaMap[&PN], assemblyRegisterName(RegId));
   }
 
   // ---- For Debugging -----

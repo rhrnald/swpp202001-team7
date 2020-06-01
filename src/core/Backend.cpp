@@ -620,41 +620,53 @@ public:
   }
   void visitSExtInst(SExtInst &SI) {
     // Get the sign bit.
+    unsigned RegId;
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
-    auto *Op = translateSrcOperandToTgt(SI.getOperand(0), &SI, 1);
+    auto *Op = translateSrcOperandToTgt(SI.getOperand(0), &SI, &RegId);
+    RegId = requestRegister(&SI);
     if (bw < 64) {
       Op =
         Builder->CreateMul(Op, ConstantInt::get(I64Ty, (1llu << (64 - bw))),
-                          assemblyRegisterName(1));
+                           assemblyRegisterName(RegId));
       Op =
-        Builder->CreateAShr(Op, 64 - bw, assemblyRegisterName(1));
+        Builder->CreateAShr(Op, 64 - bw, assemblyRegisterName(RegId));
     }
-    emitStoreToSrcRegister(Op, &SI);
+    else {
+      Op = Builder->CreateMul(Op, ConstantInt::get(I64Ty, 1),
+                              assemblyRegisterName(RegId));
+    }
+    SourceToEmitMap[&SI] = Op;
   }
   void visitZExtInst(ZExtInst &ZI) {
     // Everything is zero-extended by default.
-    auto *Op = translateSrcOperandToTgt(ZI.getOperand(0), &ZI, 1);
-    emitStoreToSrcRegister(Op, &ZI);
+    unsigned RegId;
+    auto *Op = translateSrcOperandToTgt(ZI.getOperand(0), &ZI, &RegId);
+    auto *Res = Builder->CreateMul(Op, ConstantInt::get(I64Ty, 1),
+                                   assemblyRegisterName(requestRegister(&ZI)));
+    SourceToEmitMap[&ZI] = Res;
   }
   void visitTruncInst(TruncInst &TI) {
-    auto *Op = translateSrcOperandToTgt(TI.getOperand(0), &TI, 1);
+    unsigned RegId;
+    auto *Op = translateSrcOperandToTgt(TI.getOperand(0), &TI, &RegId);
     uint64_t Divisor = (1llu << (TI.getDestTy()->getIntegerBitWidth()));
-    emitStoreToSrcRegister(
+    RegId = requestRegister(&TI);
+    SourceToEmitMap[&TI] =
       Builder->CreateURem(Op, ConstantInt::get(I64Ty, Divisor), 
-                            assemblyRegisterName(1)),
-      &TI);
+                          assemblyRegisterName(RegId));
   }
   void visitPtrToIntInst(PtrToIntInst &PI) {
-    auto *Op = translateSrcOperandToTgt(PI.getOperand(0), &PI, 1);
-    emitStoreToSrcRegister(
-      Builder->CreatePtrToInt(Op, I64Ty, assemblyRegisterName(1)),
-      &PI);
+    unsigned RegId;
+    auto *Op = translateSrcOperandToTgt(PI.getOperand(0), &PI, &RegId);
+    RegId = requestRegister(&PI);
+    SourceToEmitMap[&PI] =
+      Builder->CreatePtrToInt(Op, I64Ty, assemblyRegisterName(RegId));
   }
   void visitIntToPtrInst(IntToPtrInst &II) {
-    auto *Op = translateSrcOperandToTgt(II.getOperand(0), &II, 1);
-    emitStoreToSrcRegister(
-      Builder->CreateIntToPtr(Op, II.getType(), assemblyRegisterName(1)),
-      &II);
+    unsigned RegId;
+    auto *Op = translateSrcOperandToTgt(II.getOperand(0), &II, &RegId);
+    RegId = requestRegister(&II);
+    SourceToEmitMap[&II] =
+      Builder->CreateIntToPtr(Op, II.getType(), assemblyRegisterName(RegId));
   }
 
   // ---- Call ----

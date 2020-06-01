@@ -17,6 +17,7 @@
 using namespace llvm;
 using namespace std;
 
+// contains a set of instructions that are finally used in each block.
 map<BasicBlock *, set<Instruction *>> FinalUses;
 
 // Return sizeof(T) in bytes.
@@ -122,7 +123,7 @@ private:
     Builder->CreateStore(V, RegToAllocaMap[I]);
   }
 
-  // RA actions.
+  // ------- RA actions. --------
   void reportUse(Instruction *Source, Instruction *UserInst, bool pop=true) {
     unsigned NextAdvent = RegisterAllocator::NO_MORE_ADVENT;
     if (pop) AdventMap[Source].pop();
@@ -181,8 +182,8 @@ private:
   // Encode the value of V.
   // If V is an argument, return the corresponding argN argument.
   // If V is a constant, just return it.
-  // If V is an instruction, it emits load from the temporary alloca.
-  Value *translateSrcOperandToTgt(Value *V, Instruction *U, unsigned *AllocId) {
+  // If V is an instruction, lookup from RA. Return the register ID through AllocId.
+  Value *translateSrcOperandToTgt(Value *V, Instruction *U, unsigned *AllocId=nullptr) {
     checkSrcType(V->getType());
 
     if (auto *A = dyn_cast<Argument>(V)) {
@@ -205,7 +206,8 @@ private:
       return GVMap[GV];
 
     } else if (auto *I = dyn_cast<Instruction>(V)) {
-      *AllocId = getRegister(I);
+      unsigned RegId = getRegister(I);
+      if (AllocId) *AllocId = RegId;
       reportUse(I, U);
       return SourceToEmitMap[I];
 
@@ -337,21 +339,20 @@ public:
     CurrentBlock = &BB;
     unsigned timestep = 0;
     for (auto &I : BB) {
-      if (!isa<PHINode>(&I)) {
+      if (!isa<PHINode>(&I)) {  // phi nodes are not actually use the registers.
         for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
           Instruction *Op = dyn_cast<Instruction>(I.getOperand(i));
-          if (Op) {
-            AdventMap[Op].push(timestep);
-          }
+          if (Op) AdventMap[Op].push(timestep);
         }
       }
+      // I'll give the 'use' of phi node values to the corresponding terminator
+      // instructions. It makes sense because visitBranchInst and visitSwitchInst
+      // take care of phis.
       if (I.isTerminator() && !isa<ReturnInst>(&I)) {
         for (unsigned i = 0, e = I.getNumSuccessors(); i < e; ++i) {
           for (auto &Phi : I.getSuccessor(i)->phis()) {
             auto *InPhi = dyn_cast<Instruction>(Phi.getIncomingValueForBlock(&BB));
-            if (InPhi) {
-              AdventMap[InPhi].push(timestep);
-            }
+            if (InPhi) AdventMap[InPhi].push(timestep);
           }
         }
       }
@@ -396,16 +397,14 @@ public:
     auto *NewAllc = Builder->CreateAlloca(I.getAllocatedType(),
                                           I.getArraySize(), assemblyRegisterName(RegId));
     SourceToEmitMap[&I] = NewAllc;
-    //emitStoreToSrcRegister(NewAllc, &I);
   }
   void visitLoadInst(LoadInst &LI) {
     checkSrcType(LI.getType());
-    unsigned RegId = 0;
-    auto *TgtPtrOp = translateSrcOperandToTgt(LI.getPointerOperand(), &LI, &RegId);
+    auto *TgtPtrOp = translateSrcOperandToTgt(LI.getPointerOperand(), &LI);
     auto *LoadedTy = TgtPtrOp->getType()->getPointerElementType();
     Value *LoadedVal = nullptr;
 
-    RegId = requestRegister(&LI);
+    unsigned RegId = requestRegister(&LI);
     string Reg = assemblyRegisterName(RegId);
     if (LoadedTy->isIntegerTy() && LoadedTy->getIntegerBitWidth() < 64) {
       // Need to zext.
@@ -437,7 +436,7 @@ public:
       TgtValOp = Builder->CreateTrunc(TgtValOp, Ty, R0Trunc);
     }
 
-    auto *TgtPtrOp = translateSrcOperandToTgt(SI.getPointerOperand(), &SI, &RegId);
+    auto *TgtPtrOp = translateSrcOperandToTgt(SI.getPointerOperand(), &SI);
     Builder->CreateStore(TgtValOp, TgtPtrOp);
     RA->reportUser(nullptr);
   }
@@ -519,8 +518,8 @@ public:
     string R1Trunc = assemblyRegisterName(RegId) + "after_trunc__";
     OpCond = Builder->CreateTrunc(OpCond, I1Ty, R1Trunc);
 
-    auto *OpLeft = translateSrcOperandToTgt(SI.getOperand(1), &SI, &RegId);
-    auto *OpRight = translateSrcOperandToTgt(SI.getOperand(2), &SI, &RegId);
+    auto *OpLeft = translateSrcOperandToTgt(SI.getOperand(1), &SI);
+    auto *OpRight = translateSrcOperandToTgt(SI.getOperand(2), &SI);
     RA->reportUser(nullptr);
     RegId = requestRegister(&SI);
     SourceToEmitMap[&SI] = Builder->CreateSelect(OpCond, OpLeft, OpRight,
@@ -530,8 +529,8 @@ public:
     // Make it look like 'gep i8* ptr, i'
     RA->reportUser(&GEPI);
     unsigned PtrRegId, IdxRegId;
-    auto *PtrOp = translateSrcOperandToTgt(GEPI.getPointerOperand(), &GEPI, &PtrRegId);
-    PtrRegId = requestTempRegister();
+    auto *PtrOp = translateSrcOperandToTgt(GEPI.getPointerOperand(), &GEPI);
+    PtrRegId = requestTempRegister(); // because the operand register might be ruined!
     auto *PtrI8Op = Builder->CreateBitCast(PtrOp, I8PtrTy,
                                            assemblyRegisterName(PtrRegId));
     unsigned Idx = 1;
@@ -548,8 +547,9 @@ public:
       if (sz != 1) {
         assert(sz != 0);
         if (IdxRegId) {
+          // if IdxValue is on a register, do not ruin it!
           IdxRegId = requestTempRegister();
-          RA->giveUpTempRegister(IdxRegId);
+          RA->giveUpTempRegister(IdxRegId); // since it's used right away!
         }
         IdxValue = Builder->CreateMul(IdxValue, ConstantInt::get(I64Ty, sz),
                                       assemblyRegisterName(IdxRegId));
@@ -569,9 +569,9 @@ public:
         CurrentPtrTy = PointerType::get(ElemTy->getArrayElementType(), 0);
       ++Idx;
     }
-    RA->reportUser(nullptr);
-    RA->giveUpTempRegister(PtrRegId);
-    PtrRegId = requestRegister(&GEPI);
+    RA->reportUser(nullptr);            // Although it doesn't matter, 
+    RA->giveUpTempRegister(PtrRegId);   // since free registers are in a stack,
+    PtrRegId = requestRegister(&GEPI);  // this will preserve the ID.
     PtrOp = Builder->CreateBitCast(PtrI8Op, GEPI.getType(),
                                    assemblyRegisterName(PtrRegId));
     SourceToEmitMap[&GEPI] = PtrOp;
@@ -580,7 +580,7 @@ public:
   // ---- Casts ----
   void visitBitCastInst(BitCastInst &BCI) {
     unsigned RegId;
-    auto *Op = translateSrcOperandToTgt(BCI.getOperand(0), &BCI, &RegId);
+    auto *Op = translateSrcOperandToTgt(BCI.getOperand(0), &BCI);
     RegId = requestRegister(&BCI);
     auto *CastedOp = Builder->CreateBitCast(Op, BCI.getType(),
                                             assemblyRegisterName(RegId));
@@ -590,49 +590,41 @@ public:
     // Get the sign bit.
     unsigned RegId;
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
-    auto *Op = translateSrcOperandToTgt(SI.getOperand(0), &SI, &RegId);
-    RegId = requestRegister(&SI);
+    auto *Op = translateSrcOperandToTgt(SI.getOperand(0), &SI);
+    string Reg = assemblyRegisterName(requestRegister(&SI));
     if (bw < 64) {
-      Op =
-        Builder->CreateMul(Op, ConstantInt::get(I64Ty, (1llu << (64 - bw))),
-                           assemblyRegisterName(RegId));
-      Op =
-        Builder->CreateAShr(Op, 64 - bw, assemblyRegisterName(RegId));
+      Op = Builder->CreateMul(Op, ConstantInt::get(I64Ty, (1llu << (64 - bw))), Reg);
+      Op = Builder->CreateAShr(Op, 64 - bw, Reg);
     }
     else {
-      Op = Builder->CreateMul(Op, ConstantInt::get(I64Ty, 1),
-                              assemblyRegisterName(RegId));
+      Op = Builder->CreateMul(Op, ConstantInt::get(I64Ty, 1), Reg);
     }
     SourceToEmitMap[&SI] = Op;
   }
   void visitZExtInst(ZExtInst &ZI) {
     // Everything is zero-extended by default.
-    unsigned RegId;
-    auto *Op = translateSrcOperandToTgt(ZI.getOperand(0), &ZI, &RegId);
+    auto *Op = translateSrcOperandToTgt(ZI.getOperand(0), &ZI);
     auto *Res = Builder->CreateMul(Op, ConstantInt::get(I64Ty, 1),
                                    assemblyRegisterName(requestRegister(&ZI)));
     SourceToEmitMap[&ZI] = Res;
   }
   void visitTruncInst(TruncInst &TI) {
-    unsigned RegId;
-    auto *Op = translateSrcOperandToTgt(TI.getOperand(0), &TI, &RegId);
+    auto *Op = translateSrcOperandToTgt(TI.getOperand(0), &TI);
     uint64_t Divisor = (1llu << (TI.getDestTy()->getIntegerBitWidth()));
-    RegId = requestRegister(&TI);
+    unsigned RegId = requestRegister(&TI);
     SourceToEmitMap[&TI] =
       Builder->CreateURem(Op, ConstantInt::get(I64Ty, Divisor), 
                           assemblyRegisterName(RegId));
   }
   void visitPtrToIntInst(PtrToIntInst &PI) {
-    unsigned RegId;
-    auto *Op = translateSrcOperandToTgt(PI.getOperand(0), &PI, &RegId);
-    RegId = requestRegister(&PI);
+    auto *Op = translateSrcOperandToTgt(PI.getOperand(0), &PI);
+    unsigned RegId = requestRegister(&PI);
     SourceToEmitMap[&PI] =
       Builder->CreatePtrToInt(Op, I64Ty, assemblyRegisterName(RegId));
   }
   void visitIntToPtrInst(IntToPtrInst &II) {
-    unsigned RegId;
-    auto *Op = translateSrcOperandToTgt(II.getOperand(0), &II, &RegId);
-    RegId = requestRegister(&II);
+    auto *Op = translateSrcOperandToTgt(II.getOperand(0), &II);
+    unsigned RegId = requestRegister(&II);
     SourceToEmitMap[&II] =
       Builder->CreateIntToPtr(Op, II.getType(), assemblyRegisterName(RegId));
   }
@@ -658,12 +650,11 @@ public:
     }
 
     SmallVector<Value *, 16> Args;
-    unsigned RegId;
     for (auto I = CI.arg_begin(), E = CI.arg_end(); I != E; ++I) {
-      Args.emplace_back(translateSrcOperandToTgt(*I, &CI, &RegId));
+      Args.emplace_back(translateSrcOperandToTgt(*I, &CI));
     }
     if (CI.hasName()) {
-      RegId = requestRegister(&CI);
+      unsigned RegId = requestRegister(&CI);
       Value *Res = Builder->CreateCall(CalledFInTgt, Args,
                                        assemblyRegisterName(RegId));
       SourceToEmitMap[&CI] = Res;
@@ -679,9 +670,8 @@ public:
 
   // ---- Terminators ----
   void visitReturnInst(ReturnInst &RI) {
-    unsigned RegId;
     if (auto *RetVal = RI.getReturnValue())
-      Builder->CreateRet(translateSrcOperandToTgt(RetVal, &RI, &RegId));
+      Builder->CreateRet(translateSrcOperandToTgt(RetVal, &RI));
     else
       // To `ret i64 0`
       Builder->CreateRet(
@@ -701,7 +691,7 @@ public:
       string regname = assemblyRegisterName(RegId) + "to_i1__";
       auto *Condi1 = Builder->CreateICmpNE(CondOp, ConstantInt::get(I64Ty, 0),
                                            regname);
-      clearRA();
+      clearRA();  // Block-level RA
       Builder->CreateCondBr(Condi1, BBMap[BI.getSuccessor(0)],
                                     BBMap[BI.getSuccessor(1)]);
     }
@@ -710,16 +700,15 @@ public:
     // Emit phi's values first!
     for (unsigned i = 0, e = SI.getNumSuccessors(); i != e; ++i)
       processPHIsInSuccessor(SI.getSuccessor(i), SI.getParent(), &SI);
-    unsigned RegId;
-    auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), &SI, &RegId);
+
+    auto *TgtCond = translateSrcOperandToTgt(SI.getCondition(), &SI);
     vector<pair<ConstantInt *, BasicBlock *>> TgtCases;
     for (auto I = SI.case_begin(), E = SI.case_end(); I != E; ++I) {
       auto *C = ConstantInt::get(I64Ty, I->getCaseValue()->getZExtValue());
       TgtCases.emplace_back(C, BBMap[I->getCaseSuccessor()]);
     }
 
-    clearRA();
-    
+    clearRA();  // Block-level RA
     auto *TgtSI = Builder->CreateSwitch(TgtCond, BBMap[SI.getDefaultDest()],
                                         SI.getNumCases());
     for (auto [CaseVal, CaseDest] : TgtCases)
@@ -742,10 +731,9 @@ public:
     //   ...
     //   store y, x_phi_tmp_slot   -->  processed by processPHIsInSuccessor
     //   store x, y_phi_tmp_slot
-    unsigned RegId;
     for (auto &PHI : Succ->phis()) {
       auto *V =
-        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), U, &RegId);
+        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), U);
       checkTgtType(V->getType());
       assert(!isa<Instruction>(V) || !V->hasName() ||
              V->getName().startswith("__r"));
@@ -939,11 +927,11 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   ConstExprToInsts CEI;
   CEI.visit(M);
 
-  // Second and half, handle AllocaBytes
+  // Second and half, handle AllocaBytes.
   AllocaBytesHandler ABH(M);
   ABH.visit(M);
 
-  // Second and three quaters, check FinalUser
+  // Second and three quaters, check FinalUser.
   RAHelper RAH;
   for (auto &F : M) RAH.visit(F);
 
@@ -951,6 +939,7 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   DepromoteRegisters Deprom;
   Deprom.visit(M);
 
+  // Finally, eleminate unused garbage slots.
   GarbageSlotEliminator GSE;
   GSE.visit(*Deprom.getDepromotedModule());
   GSE.eliminate();

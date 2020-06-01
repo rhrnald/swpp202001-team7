@@ -43,7 +43,7 @@ private:
 
   vector<Allocation *>::iterator getVictim(unsigned RegId) {
     vector<Allocation *>::iterator Victim = ActiveSet.end();
-    if (RegId) {
+    if (RegId) {  // evict a specific register
       for (auto I = ActiveSet.begin(), E = ActiveSet.end(); I != E; I++) {
         if ((*I)->RegId == RegId) {
           Victim = I;
@@ -52,13 +52,8 @@ private:
       }
     }
     else {
-      // random policy - do not evict the currently used one!
-      /*
-      do {
-        Victim = ActiveSet.begin() + (rand() % ActiveSet.size());
-      } while (CurrentUser && (*Victim)->LastUser == CurrentUser);
-      */
-      // optimal policy
+      // optimal policy - evict whose next advent is the latest
+      // must not evict the register which is used by the current user.
       auto HeapEnd = ActiveSet.end();
       while (CurrentUser && (*ActiveSet.begin())->LastUser == CurrentUser) {
         pop_heap(ActiveSet.begin(), HeapEnd, Cmp);
@@ -183,6 +178,10 @@ public:
     FreeRegisters.push(RegId);
   }
 
+  /*
+   * report the current user so that the registers currently being used
+   * will not be evicted.
+   */
   void reportUser(Instruction *U) {
     CurrentUser = U;
   }

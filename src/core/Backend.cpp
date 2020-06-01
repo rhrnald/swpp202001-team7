@@ -143,6 +143,7 @@ private:
       // must spill
       emitStoreToSrcRegister(SourceToEmitMap[Victim], Victim);
     }
+    DEBUG_OUT() << "evict: r" << Alloc->RegId << " [" << Victim->getName() << "]\n";
   }
 
   unsigned requestRegister(Instruction *I) {
@@ -162,6 +163,16 @@ private:
       RegId = requestRegister(I);
       // fill
       SourceToEmitMap[I] = emitLoadFromSrcRegister(I, RegId);
+    }
+    return RegId;
+  }
+
+  unsigned requestTempRegister(unsigned TargetId=0) {
+    auto RegId = RA->requestTempRegister(TargetId);
+    if (RegId == 0) {
+      evict(RA->evict(TargetId));
+      RegId = RA->requestTempRegister(TargetId);
+      assert(RegId && "request tempreg after an eviction didn't work!");
     }
     return RegId;
   }
@@ -214,7 +225,7 @@ private:
           reportUse(I, U);
           emitStoreToSrcRegister(SourceToEmitMap[I], I);
         }
-        if (OperandId > 3) {
+        if (OperandId >= MIN_REG_N) {
           // handling function calls
           if (RA->requestTempRegister(OperandId)) {
             RA->giveUpTempRegister(OperandId);
@@ -549,23 +560,31 @@ public:
   }
   void visitGetElementPtrInst(GetElementPtrInst &GEPI) {
     // Make it look like 'gep i8* ptr, i'
-    auto *PtrOp = translateSrcOperandToTgt(GEPI.getPointerOperand(), &GEPI, 1);
+    RA->reportUser(&GEPI);
+    unsigned PtrRegId, IdxRegId;
+    auto *PtrOp = translateSrcOperandToTgt(GEPI.getPointerOperand(), &GEPI, &PtrRegId);
+    PtrRegId = requestTempRegister();
     auto *PtrI8Op = Builder->CreateBitCast(PtrOp, I8PtrTy,
-                                           assemblyRegisterName(1));
+                                           assemblyRegisterName(PtrRegId));
     unsigned Idx = 1;
     Type *CurrentPtrTy = GEPI.getPointerOperandType();
 
     while (Idx <= GEPI.getNumIndices()) {
+      IdxRegId = 0;
       assert(GEPI.getOperand(Idx)->getType() == I64Ty &&
              "We only accept getelementptr with indices of 64 bits.");
-      auto *IdxValue = translateSrcOperandToTgt(GEPI.getOperand(Idx), &GEPI, 2);
+      auto *IdxValue = translateSrcOperandToTgt(GEPI.getOperand(Idx), &GEPI, &IdxRegId);
 
       auto *ElemTy = CurrentPtrTy->getPointerElementType();
       unsigned sz = getAccessSize(ElemTy);
       if (sz != 1) {
         assert(sz != 0);
+        if (IdxRegId) {
+          IdxRegId = requestTempRegister();
+          RA->giveUpTempRegister(IdxRegId);
+        }
         IdxValue = Builder->CreateMul(IdxValue, ConstantInt::get(I64Ty, sz),
-                                      assemblyRegisterName(2));
+                                      assemblyRegisterName(IdxRegId));
       }
 
       bool isZero = false;
@@ -573,7 +592,7 @@ public:
         isZero = CI->getZExtValue() == 0;
 
       if (!isZero)
-        PtrI8Op = Builder->CreateGEP(PtrI8Op, IdxValue, assemblyRegisterName(1));
+        PtrI8Op = Builder->CreateGEP(PtrI8Op, IdxValue, assemblyRegisterName(PtrRegId));
 
       if (!ElemTy->isArrayTy()) {
         CurrentPtrTy = nullptr;
@@ -582,18 +601,22 @@ public:
         CurrentPtrTy = PointerType::get(ElemTy->getArrayElementType(), 0);
       ++Idx;
     }
-
+    RA->reportUser(nullptr);
+    RA->giveUpTempRegister(PtrRegId);
+    PtrRegId = requestRegister(&GEPI);
     PtrOp = Builder->CreateBitCast(PtrI8Op, GEPI.getType(),
-                                   assemblyRegisterName(1));
-    emitStoreToSrcRegister(PtrOp, &GEPI);
+                                   assemblyRegisterName(PtrRegId));
+    SourceToEmitMap[&GEPI] = PtrOp;
   }
 
   // ---- Casts ----
   void visitBitCastInst(BitCastInst &BCI) {
-    auto *Op = translateSrcOperandToTgt(BCI.getOperand(0), &BCI, 1);
+    unsigned RegId;
+    auto *Op = translateSrcOperandToTgt(BCI.getOperand(0), &BCI, &RegId);
+    RegId = requestRegister(&BCI);
     auto *CastedOp = Builder->CreateBitCast(Op, BCI.getType(),
-        assemblyRegisterName(1));
-    emitStoreToSrcRegister(CastedOp, &BCI);
+                                            assemblyRegisterName(RegId));
+    SourceToEmitMap[&BCI] = CastedOp;
   }
   void visitSExtInst(SExtInst &SI) {
     // Get the sign bit.
@@ -643,11 +666,7 @@ public:
     if (!RefSet && CalledF->getName() == SetRefName) {
       RefSet = true;
       // Now the reference sp is set. Prepare for it!
-      unsigned GotId = RA->requestTempRegister(RefSPId);
-      if (GotId == 0) {
-        evict(RA->evict(RefSPId));
-        GotId = RA->requestTempRegister(RefSPId);
-      }
+      requestTempRegister(RefSPId);
     }
     else if (RefSet && CalledF->getName() == SpillRefName) {
       // The reference sp is spilled for the moment. Enjoy!
@@ -673,10 +692,7 @@ public:
     }
 
     if (RefSpilled && CalledF->getName() != SpillRefName) {
-      if (RA->requestTempRegister(RefSPId) == 0) {
-        evict(RA->evict(RefSPId));
-        RA->requestTempRegister(RefSPId);
-      }
+      requestTempRegister(RefSPId);
       RefSpilled = false;
     }
   }
@@ -920,7 +936,7 @@ public:
   void eliminate() {
     unsigned cnt = 0;
     while (!garbages.empty()) {
-      outs() << "GSE: eliminate " << *garbages.front() << "\n";
+      //outs() << "GSE: eliminate " << *garbages.front() << "\n";
       garbages.front()->setName(garbages.front()->getName() + "_garbage");
       garbages.pop();
       cnt += 1;

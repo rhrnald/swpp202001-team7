@@ -60,12 +60,13 @@ private:
       } while (CurrentUser && (*Victim)->LastUser == CurrentUser);
       */
       // optimal policy
-      Victim = ActiveSet.begin();
-      while (CurrentUser && (*Victim)->LastUser == CurrentUser) {
-        pop_heap(Victim, ActiveSet.end(), Cmp);
-        Victim += 1;
-        assert(Victim != ActiveSet.end());
+      auto HeapEnd = ActiveSet.end();
+      while (CurrentUser && (*ActiveSet.begin())->LastUser == CurrentUser) {
+        pop_heap(ActiveSet.begin(), HeapEnd, Cmp);
+        HeapEnd -= 1;
+        assert(HeapEnd != ActiveSet.begin());
       }
+      Victim = ActiveSet.begin();
     }
     assert(Victim != ActiveSet.end());
     return Victim;
@@ -152,6 +153,7 @@ public:
   // Note that RegId cannot be already in TempRegisters!
   unsigned requestTempRegister(unsigned RegId) {
     assert(TempRegisters.count(RegId) == 0);
+    if (RegId == 0) return requestTempRegister();
     stack<unsigned> Temp;
     unsigned FoundId = 0;
     // Find RegId

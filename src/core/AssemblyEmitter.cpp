@@ -430,7 +430,7 @@ public:
     }
     if (FnName == AllocaBytesName) {
       if (CI.hasName()) {
-        assert(CurrentSP == RefSP && "set_ref should be called before alloca_bytes.");
+        //assert(CurrentSP == RefSP && "set_ref should be called before alloca_bytes.");
         string DestReg = getRegisterNameFromInstruction(&CI, false);
         string Size = getOperand(*CI.arg_begin()).first;
         emitAssembly(";", {AllocaBytesName, Size});
@@ -443,6 +443,12 @@ public:
       string Size = getOperand(*CI.arg_begin()).first;
       emitAssembly(";", {FreeBytesName, Size});
       emitAssembly("sp", "add", {"sp", Size, "64"});
+      return;
+    }
+    if (FnName == GetSPName) {
+      string DestReg = getRegisterNameFromInstruction(&CI, false);
+      emitAssembly(";", {GetSPName});
+      emitAssembly(DestReg, "mul", {"sp", "1", "64"});
       return;
     }
 
@@ -525,7 +531,7 @@ void AssemblyEmitter::run(Module *DepromotedM) {
   AssemblyEmitterImpl Em;
   unsigned TotalStackUsage = 0;
   for (auto &F : *DepromotedM) {
-    if (F.isDeclaration())
+    if (F.isDeclaration() || F.getName() == GetSPName)
       continue;
 
     Em.visit(F);

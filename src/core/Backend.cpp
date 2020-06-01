@@ -659,7 +659,7 @@ public:
           Function *CalledFn = CI->getCalledFunction();
           if (CalledFn->getName() == AllocaBytesName) {
             if (!ABFound) {
-              CallInst::Create(SetRefFn)->insertBefore(CI);
+              F.getEntryBlock().getInstList().push_front(CallInst::Create(SetRefFn));
               ABFound = true;
             }
             if (FreeInThisBlock) {

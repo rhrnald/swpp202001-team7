@@ -3,6 +3,9 @@
 
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IRBuilder.h"
 
 using namespace llvm;
 
@@ -17,5 +20,4 @@ class MemUseOptimization : public PassInfoMixin<MemUseOptimization> {
 public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
 };
-
 #endif

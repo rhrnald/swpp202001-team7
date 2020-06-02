@@ -19,9 +19,9 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
       MallocFn = &F, MallocTy = dyn_cast<FunctionType>(F.getValueType());
     } else if (F.getName() == "free") {
       FreeFn = &F, FreeTy = dyn_cast<FunctionType>(F.getValueType());
-    } else if (F.getName() == AllocaBytesName) {
+    } else if (F.getName() == AllocaBytesFnName) {
       AllocaBytesFn = &F, AllocaBytesTy = dyn_cast<FunctionType>(F.getValueType());
-    } else if (F.getName() == GetSPName) {
+    } else if (F.getName() == GetSPFnName) {
       GetSPFn = &F, GetSPTy = dyn_cast<FunctionType>(F.getValueType());
     } else if (F.getName() == "main") {
       MainFn = &F, MainTy = dyn_cast<FunctionType>(F.getValueType());
@@ -35,11 +35,11 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
   if (AllocaBytesFn == NULL) {
     AllocaBytesTy = FunctionType::get(I8PtrTy, {I64Ty, I64Ty}, false);
     AllocaBytesFn = Function::Create(AllocaBytesTy, Function::ExternalLinkage,
-                                    AllocaBytesName, M);
+                                    AllocaBytesFnName, M);
   }
   if (GetSPFn == NULL) {
     GetSPTy = FunctionType::get(I64Ty, {}, false);
-    GetSPFn = Function::Create(GetSPTy, Function::ExternalLinkage, GetSPName, M);
+    GetSPFn = Function::Create(GetSPTy, Function::ExternalLinkage, GetSPFnName, M);
   }
 
   // GetSPFn should not be inlined

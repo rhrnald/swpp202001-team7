@@ -140,11 +140,10 @@ int main(int argc, char **argv) {
   if (!excepted("LoopOptimization", exceptList)) {
     // Loop builtin optimizations
     string LoopPrePasses = "-loop-simplify -loop-deletion -lcssa -licm -loop-distribute";
-    string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-simplifycfg";
-    string LoopMainPasses = "-loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder -unroll-threshold=100 -loop-rotate -loop-interchange";
-    //string LoopEndPasses = "-instcombine -simplifycfg -loop-instsimplify -instcombine";
-    string LoopEndPasses = "-instcombine -loop-instsimplify -instcombine";
-    
+    string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-reduce -loop-simplifycfg -loop-rotate";
+    string LoopMainPasses = "-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder -unroll-threshold=100";
+    string LoopEndPasses = "-instcombine -simplifycfg -loop-instsimplify -instcombine -aggressive-instcombine";
+
     runBuiltinOpt(LoopPrePasses, M);
     runBuiltinOpt(LoopBasicPasses, M);
     runBuiltinOpt(LoopMainPasses, M);

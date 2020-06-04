@@ -10,7 +10,7 @@ using namespace std;
 
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
+  if (argc != 2 && argc != 3) {
     cout << "USAGE: sf-interpreter <input assembly file>" << endl;
     return 1;
   }
@@ -33,7 +33,11 @@ int main(int argc, char** argv) {
 
   uint64_t ret = state.exec_function(main);
 
-  ofstream log("sf-interpreter.log");
+  string outp = "sf-interpreter.log";
+  if (argc == 3) {
+    outp = argv[2];
+  }
+  ofstream log(outp);
   log << fixed << setprecision(4);
   log << "Returned: " << ret << endl;
   log << "Cost: " << state.get_cost() << endl;

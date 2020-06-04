@@ -3,6 +3,7 @@ import os, sys, pathlib
 import subprocess
 
 TC_LEN = 15
+TC_LONG_LEN = 40
 COST_LEN = 20
 
 RED = '\33[31m'
@@ -25,10 +26,12 @@ if len(sys.argv) == 1:
     print('========================================')
     exit(0)
 
-if len(sys.argv) != 6:
+if len(sys.argv) != 6 and len(sys.argv) != 7:
     sys.stderr.write('please add 5 arguments!')
     sys.stderr.write('python3 log_checker.py (test case name) (original output) (optimized output) (original log) (optimized log)')
     exit(1)
+
+silence = len(sys.argv) == 7
 
 def bash(command):
     s = subprocess.check_output(command, shell=True)
@@ -80,6 +83,7 @@ def delta(r1, c1, r2, c2):
 
 
 test_case = sys.argv[1].split('/')[-1]
+full_test_case = '/'.join(sys.argv[1].split('/')[2:])
 o1 = read_output(sys.argv[2])
 o2 = read_output(sys.argv[3])
 r1, c1, h1 = read_log(sys.argv[4])
@@ -87,15 +91,24 @@ r2, c2, h2 = read_log(sys.argv[5])
 
 if o1 == o2:
     if r1 == r2:
-        print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [AC] ', GREEN) + '   ' \
-                + fix_width(str(c1) + '(' + str(h1) + ')', COST_LEN) + ' --> ' \
-                + fix_width(str(c2) + '(' + str(h2) + ')', COST_LEN) + '  ' \
-                + delta(r1, c1, r2, c2))
-        bash('echo ' + sys.argv[1] + ' ' + str(c1) + ' ' + str(h1) + ' >> ' + LOG_ORIGINAL)
-        bash('echo ' + sys.argv[1] + ' ' + str(c2) + ' ' + str(h2) + ' >> ' + LOG_CONVERTED)
+        if silence:
+            print('>> Testing ' + fix_width(full_test_case, TC_LONG_LEN) + colored(' [AC] ', GREEN))
+        else:
+            print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [AC] ', GREEN) + '   ' \
+                    + fix_width(str(c1) + '(' + str(h1) + ')', COST_LEN) + ' --> ' \
+                    + fix_width(str(c2) + '(' + str(h2) + ')', COST_LEN) + '  ' \
+                    + delta(r1, c1, r2, c2))
+            bash('echo ' + sys.argv[1] + ' ' + str(c1) + ' ' + str(h1) + ' >> ' + LOG_ORIGINAL)
+            bash('echo ' + sys.argv[1] + ' ' + str(c2) + ' ' + str(h2) + ' >> ' + LOG_CONVERTED)
     else:
-        print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [RE] ', BLUE) \
-                + ' Return values are not same!')
+        if silence:
+            print('>> Testing ' + fix_width(full_test_case, TC_LONG_LEN) + colored(' [RE] ', BLUE))
+        else:
+            print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [RE] ', BLUE) \
+                    + ' Return values are not same!')
 else:
-    print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [WA] ', RED) \
-            + ': ' + colored('Output values are not same!', RED))
+    if silence:
+        print('>> Testing ' + fix_width(full_test_case, TC_LONG_LEN) + colored(' [WA] ', RED))
+    else:
+        print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [WA] ', RED) \
+                + ': ' + colored('Output values are not same!', RED))

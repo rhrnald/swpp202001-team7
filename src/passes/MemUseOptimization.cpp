@@ -15,22 +15,20 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
   MallocFn = AllocaBytesFn = MainFn = GetSPFn = NULL;
   // Fetch the corresponding functions from the module
   for (auto &F : M) {
-    if (F.getName() == "malloc") {
+    if (F.getName() == "malloc")
       MallocFn = &F, MallocTy = dyn_cast<FunctionType>(F.getValueType());
-    } else if (F.getName() == "free") {
+    else if (F.getName() == "free")
       FreeFn = &F, FreeTy = dyn_cast<FunctionType>(F.getValueType());
-    } else if (F.getName() == AllocaBytesFnName) {
+    else if (F.getName() == AllocaBytesFnName)
       AllocaBytesFn = &F, AllocaBytesTy = dyn_cast<FunctionType>(F.getValueType());
-    } else if (F.getName() == GetSPFnName) {
+    else if (F.getName() == GetSPFnName)
       GetSPFn = &F, GetSPTy = dyn_cast<FunctionType>(F.getValueType());
-    } else if (F.getName() == "main") {
+    else if (F.getName() == "main")
       MainFn = &F, MainTy = dyn_cast<FunctionType>(F.getValueType());
-    }
   }
 
   // Main function must exist
   assert(MainFn != NULL && "No main function in the IR module!");
-
   // Create AllocaBytes and GetSP if they don't exist
   if (AllocaBytesFn == NULL) {
     AllocaBytesTy = FunctionType::get(I8PtrTy, {I64Ty, I64Ty}, false);
@@ -53,15 +51,12 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
   FunctionAnalysisManager &FAM
     = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
   LoopInfo LI(FAM.getResult<DominatorTreeAnalysis>(*MainFn));
-
   for (auto &BB : *MainFn) {
     if (LI.getLoopFor(&BB)) continue; // Ignore loop blocks
     for (auto &I : BB) {
       if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-        if (CI->getCalledFunction() == MallocFn)
-          MallocInsts.push_back(CI);
-        if (CI->getCalledFunction() == FreeFn)
-          FreeInsts.push_back(CI);
+        if (CI->getCalledFunction() == MallocFn) MallocInsts.push_back(CI);
+        if (CI->getCalledFunction() == FreeFn) FreeInsts.push_back(CI);
       }
     }
   }
@@ -74,14 +69,14 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
   /* Convert all candidate malloc(size) to:
    * if (__get_stack_pointer__() - size >= STACK_DANGEROUS_REGION)
    *   return alloca_bytes(size);
-   * else
-   *   return malloc(size); */
+   * else return malloc(size); */
   for (auto &CI : MallocInsts) {
     BasicBlock *BB = CI->getParent();
     BasicBlock *SplitBB = BB->splitBasicBlock(CI, "div." + BB->getName());
-    BasicBlock *AllocaBB = BasicBlock::Create(Context, "alloca." + BB->getName(), MainFn);
-    BasicBlock *MallocBB = BasicBlock::Create(Context, "malloc." + BB->getName(), MainFn);
-
+    BasicBlock *AllocaBB = BasicBlock::Create(Context,
+                             "alloca." + BB->getName(), MainFn);
+    BasicBlock *MallocBB = BasicBlock::Create(Context,
+                             "malloc." + BB->getName(), MainFn);
     Value *AllocSize = CI->getOperand(0);
 
     // Basic Block Conditional Branch Update
@@ -90,7 +85,6 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
     auto *CmpSP = new ICmpInst(ICmpInst::ICMP_SGE, SubSP,
                         ConstantInt::get(I64Ty, STACK_DANGEROUS_REGION), "is.safe.sp");
     auto *BrSP = BranchInst::Create(AllocaBB, MallocBB, CmpSP);
-
     BB->getInstList().pop_back();           // Remove BranchInst BB->SplitBB
     BB->getInstList().push_back(CurrentSP); // __get_stack_pointer()__
     BB->getInstList().push_back(SubSP);     // __get_stack_pointer()__ - size
@@ -101,14 +95,12 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
     auto *AllocaBytes = CallInst::Create(AllocaBytesTy, AllocaBytesFn,
                           {AllocSize, ConstantInt::get(I64Ty, 0)}, "by.alloca_bytes");
     auto *BackFromAllocaBytes = BranchInst::Create(SplitBB);
-
-    AllocaBB->getInstList().push_back(AllocaBytes); // __alloca_bytes__(size, free_in_block=0)
+    AllocaBB->getInstList().push_back(AllocaBytes);
     AllocaBB->getInstList().push_back(BackFromAllocaBytes);
 
     // Malloc Basic Block
     auto *Malloc = CallInst::Create(MallocTy, MallocFn, {AllocSize}, "by.malloc");
     auto *BackFromMalloc = BranchInst::Create(SplitBB);
-
     MallocBB->getInstList().push_back(Malloc); // malloc(size)
     MallocBB->getInstList().push_back(BackFromMalloc);
 
@@ -122,16 +114,13 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
     CI->eraseFromParent();
   }
 
-  /* Convert all candidate free(ptr) to: (since they can be either STACK or HEAP alloc)
-   * if ((int) ptr >= STACK_BOUNDARY)
-   *   free(ptr)
-   * else
-   *   ; // do nothing */
+  /* Convert all candidate free(ptr) to: (can be either STACK or HEAP alloc)
+   * if ((int) ptr >= STACK_BOUNDARY) free(ptr)
+   * else ; // do nothing */
   for (auto &CI : FreeInsts) {
     BasicBlock *BB = CI->getParent();
     BasicBlock *SplitBB = BB->splitBasicBlock(CI, "div." + BB->getName());
     BasicBlock *FreeBB = BasicBlock::Create(Context, "free." + BB->getName(), MainFn);
-
     Value *AllocPtr = CI->getOperand(0);
 
     // Basic Block Conditional Branch Update
@@ -139,7 +128,6 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
     auto *CmpSP = new ICmpInst(ICmpInst::ICMP_SGE, AllocPos,
                         ConstantInt::get(I64Ty, STACK_BOUNDARY), "cmp.sp");
     auto *BrSP = BranchInst::Create(FreeBB, SplitBB, CmpSP);
-
     BB->getInstList().pop_back();          // Remove BranchInst BB->SplitBB
     BB->getInstList().push_back(AllocPos); // (int) ptr
     BB->getInstList().push_back(CmpSP);    // (int) ptr >= STACK_BOUNDARY
@@ -148,7 +136,6 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
     // FreeBB for actual free in HEAP area
     auto *Free = CallInst::Create(FreeTy, FreeFn, {AllocPtr});
     auto *Back = BranchInst::Create(SplitBB);
-
     FreeBB->getInstList().push_back(Free);
     FreeBB->getInstList().push_back(Back);
 

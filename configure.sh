@@ -7,8 +7,9 @@ if [ "$#" -ne 1 ]; then
     exit 1
   fi
   TEST_THREADS=$2
+else
+  TEST_THREADS=16
 fi
-TEST_THREADS=16
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
   ISYSROOT="-isysroot `xcrun --show-sdk-path`"

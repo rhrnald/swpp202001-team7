@@ -1,10 +1,14 @@
 #!/bin/bash
 
 if [ "$#" -ne 1 ]; then
-  echo "configure.sh <clang dir>"
-  echo "ex)  ./configure.sh ~/llvm-10.0-releaseassert/bin"
-  exit 1
+  if [ "$#" -ne 2 ]; then
+    echo "configure.sh <clang dir>"
+    echo "ex)  ./configure.sh ~/llvm-10.0-releaseassert/bin"
+    exit 1
+  fi
+  TEST_THREADS=$2
 fi
+TEST_THREADS=16
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
   ISYSROOT="-isysroot `xcrun --show-sdk-path`"
@@ -40,3 +44,13 @@ echo "#define LLVM_BIN \"$1\"" >> src/core/LLVMPath.h
 
 echo "LLVM_BIN = \"$1\"" > test/loops_unit_test/test.py
 cat test/loops_unit_test/test.py.template >> test/loops_unit_test/test.py
+
+echo "#!/bin/bash" > test/checker.sh
+echo "TEST_THREADS=$TEST_THREADS" >> test/checker.sh
+cat test/checker.sh.template >> test/checker.sh
+chmod +x test/checker.sh
+
+echo "#!/bin/bash" > test/single_checker.sh
+echo "TEST_THREADS=$TEST_THREADS" >> test/single_checker.sh
+cat test/single_checker.sh.template >> test/single_checker.sh
+chmod +x test/single_checker.sh

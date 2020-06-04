@@ -9,3 +9,5 @@ src/core/LLVMPath.h
 test/converted.log
 test/original.log
 test/loops_unit_test/test.py
+test/checker.sh
+test/single_checker.sh

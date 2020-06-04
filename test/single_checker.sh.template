@@ -1,5 +1,3 @@
-#!/bin/bash
-
 set -e
 trap 'kill $(jobs -p)' SIGINT
 
@@ -18,7 +16,7 @@ bef_s=$tc/"bef.s"
 aft_s=$tc/"aft.s"
 
 if [ $# -eq 2 ]; then
-  $DIR/../bin/sf-compiler-team7 $orig_ll -o $bef_s "-except $2" &
+  $DIR/../bin/sf-compiler-team7 $orig_ll -o $bef_s "-except=$2" &
 else
   $DIR/../bin/sf-compiler-vanilla $orig_ll -o $bef_s &
 fi
@@ -31,6 +29,7 @@ do
 done
 
 for inp in $tc/test/input*.txt; do
+  while [ $(jobs | wc -l) -ge $TEST_THREADS ] ; do sleep 10 ; done
   $DIR/tc_checker.sh $tc $inp &
 done
 

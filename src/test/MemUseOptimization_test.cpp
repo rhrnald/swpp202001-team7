@@ -33,7 +33,7 @@ TEST(PassCheck, MemUseOptimizationTest) {
   BasicBlock *Entry = BasicBlock::Create(Context, "entry", MainF);
   IRBuilder<> EntryBuilder(Entry);
 
-  //Allocate
+  //Malloc
   auto *m = EntryBuilder.CreateCall(MallocF, ConstantInt::get(Type::getInt64Ty(Context), 8), "mem");
 
   //Store
@@ -44,6 +44,32 @@ TEST(PassCheck, MemUseOptimizationTest) {
 
   //Ret
   auto *r = EntryBuilder.CreateRet(ConstantInt::get(Type::getInt32Ty(Context), 0));
+
+  /* Therefore, the converted one is as follow:
+   *
+   * // Before
+   * int main() {
+   *   m = malloc(8);
+   *   m[0] = 1;
+   *   free(m);
+   *   return 0;
+   * }
+   *
+   * // After
+   * int main() {
+   *   if (__get_stack_pointer()__ - 8 >= STACK_DANGEROUS_REGION) {
+   *     stack_pointer -= 8;
+   *     m = stack_pointer
+   *   } else {
+   *     m = malloc(8);
+   *   }
+   *   m[0] = 1;
+   *   if ((int) m > 10240) {
+   *     free(m);
+   *   }
+   *   return 0;
+   * }
+   * */
 
   ///////////////////////////////Apply Pass//////////////////////////////////
   LoopAnalysisManager LAM;
@@ -97,6 +123,7 @@ TEST(PassCheck, MemUseOptimizationTest) {
   EXPECT_TRUE(BasicBlockMap.count("malloc.entry") > 0);
   EXPECT_TRUE(BasicBlockMap.count("div.div.entry") > 0);
 
+  /* Just like a filecheck; check if the basic block is equal to expected one */
   string conv_entry;
   string stack_dangerous_region_str = to_string(STACK_DANGEROUS_REGION);
   string expt_entry = "\n"

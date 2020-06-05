@@ -8,7 +8,7 @@ if [ "$#" -ne 1 ]; then
   fi
   TEST_THREADS=$2
 else
-  TEST_THREADS=16
+  TEST_THREADS=8
 fi
 
 if [[ "$OSTYPE" == "darwin"* ]]; then

@@ -18,6 +18,7 @@ if len(sys.argv) == 1:
     print('========================================')
     print('We wrote test outputs as the below form:')
     print('>> [original cost]([original heap usage]) --> [optimized cost]([optimized heap usage])')
+    print('>>   +-total difference[cost difference(heap usage difference)]')
     print()
     print('And the following labels:')
     print('>> ' + GREEN + '[AC]' + ORIG + ' to represent \'ACcepted output!\'')
@@ -58,11 +59,24 @@ def read_log(arg):
     f.close()
     return (return_value, cost, heap_usage)
 
-def delta(r1, c1, r2, c2):
+def stat(c, h):
+    #return str(c + h) + '(' + str(c) + ',' + str(h) + ')'
+    return str(c) + '(' + str(h) + ')'
+
+def delta(c1, h1, c2, h2):
+    dt = round(c2 + h2 - c1 - h1, 2)
     dc = round(c2 - c1, 2)
-    dr = round(r2 - r1, 2)
+    dh = round(h2 - h1, 2)
     ret = ''
 
+    if dt > 0:
+        ret = ret + colored('+' + str(dt), RED)
+    elif dt < 0:
+        ret = ret + colored(str(dt), BLUE)
+    else:
+        ret = ret + colored(str(dt), GREEN)
+
+    ret = ret + '['
     if dc > 0:
         ret = ret + colored('+' + str(dc), RED)
     elif dc < 0:
@@ -71,13 +85,14 @@ def delta(r1, c1, r2, c2):
         ret = ret + colored(str(dc), GREEN)
 
     ret = ret + '('
-    if dr > 0:
-        ret = ret + colored('+' + str(dr), RED)
-    elif dr < 0:
-        ret = ret + colored(str(dr), BLUE)
+    if dh > 0:
+        ret = ret + colored('+' + str(dh), RED)
+    elif dh < 0:
+        ret = ret + colored(str(dh), BLUE)
     else:
-        ret = ret + colored(str(dr), GREEN)
+        ret = ret + colored(str(dh), GREEN)
     ret = ret + ')'
+    ret = ret + ']'
     return ret
 
 
@@ -95,9 +110,9 @@ if o1 == o2:
             print('>> Testing ' + fix_width(full_test_case, TC_LONG_LEN) + colored(' [AC] ', GREEN))
         else:
             print('>> Testing ' + fix_width(test_case, TC_LEN) + colored(' [AC] ', GREEN) + '   ' \
-                    + fix_width(str(c1) + '(' + str(h1) + ')', COST_LEN) + ' --> ' \
-                    + fix_width(str(c2) + '(' + str(h2) + ')', COST_LEN) + '  ' \
-                    + delta(r1, c1, r2, c2))
+                    + fix_width(stat(c1, h1), COST_LEN) + ' --> ' \
+                    + fix_width(stat(c2, h2), COST_LEN) + '  ' \
+                    + delta(c1, h1, c2, h2))
             bash('echo ' + sys.argv[1] + ' ' + str(c1) + ' ' + str(h1) + ' >> ' + LOG_ORIGINAL)
             bash('echo ' + sys.argv[1] + ' ' + str(c2) + ' ' + str(h2) + ' >> ' + LOG_CONVERTED)
     else:

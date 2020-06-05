@@ -33,7 +33,7 @@ for tc in $dir/ours/*; do
 done
 
 echo =========================================================
-echo Running interpreter in parallel
+echo Running interpreters in parallel
 echo =========================================================
 
 # Interpreter Phase
@@ -95,7 +95,7 @@ for tc in $dir/benchmarks/*; do
 done
 
 echo =========================================================
-echo Running interpreter in parallel
+echo Running interpreters in parallel
 echo =========================================================
 
 # Interpreter Phase

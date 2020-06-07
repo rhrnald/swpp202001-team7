@@ -637,6 +637,28 @@ public:
   }
 };
 
+class GarbageSlotEliminator : public InstVisitor<GarbageSlotEliminator> {
+private:
+  queue<Instruction *> garbages;
+
+public:
+  void visitAllocaInst(AllocaInst &I) {
+    if (I.getNumUses() == 0) {
+      garbages.push(&I);
+    }
+  }
+
+  void eliminate() {
+    unsigned cnt = 0;
+    while (!garbages.empty()) {
+      garbages.front()->setName(garbages.front()->getName() + "_garbage");
+      garbages.pop();
+      cnt += 1;
+    }
+    if (cnt) outs() << "Garbage Slot Elimination DONE! " << cnt << " slots are eliminated." << "\n";
+  }
+};
+
 class AllocaBytesHandler : public InstVisitor<AllocaBytesHandler> {
 private:
   Function *SetRefFn, *SpillRefFn, *FreeBytesFn;
@@ -697,28 +719,6 @@ public:
         CallInst::Create(FreeBytesFn, {Size})->insertBefore(&*BB.rbegin());
       }
     }
-  }
-};
-
-class GarbageSlotEliminator : public InstVisitor<GarbageSlotEliminator> {
-private:
-  queue<Instruction *> garbages;
-
-public:
-  void visitAllocaInst(AllocaInst &I) {
-    if (I.getNumUses() == 0) {
-      garbages.push(&I);
-    }
-  }
-
-  void eliminate() {
-    unsigned cnt = 0;
-    while (!garbages.empty()) {
-      garbages.front()->setName(garbages.front()->getName() + "_garbage");
-      garbages.pop();
-      cnt += 1;
-    }
-    if (cnt) outs() << "Garbage Slot Elimination DONE! " << cnt << " slots are eliminated." << "\n";
   }
 };
 

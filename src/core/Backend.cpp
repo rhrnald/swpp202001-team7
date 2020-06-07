@@ -887,28 +887,6 @@ public:
   }
 };
 
-class GarbageSlotEliminator : public InstVisitor<GarbageSlotEliminator> {
-private:
-  queue<Instruction *> garbages;
-
-public:
-  void visitAllocaInst(AllocaInst &I) {
-    if (I.getNumUses() == 0) {
-      garbages.push(&I);
-    }
-  }
-
-  void eliminate() {
-    unsigned cnt = 0;
-    while (!garbages.empty()) {
-      garbages.front()->setName(garbages.front()->getName() + "_garbage");
-      garbages.pop();
-      cnt += 1;
-    }
-    if (cnt) outs() << "Garbage Slot Elimination DONE! " << cnt << " slots are eliminated." << "\n";
-  }
-};
-
 PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   if (verifyModule(M, &errs(), nullptr))
     exit(1);
@@ -921,7 +899,7 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   ConstExprToInsts CEI;
   CEI.visit(M);
 
-  // Second and half, handle AllocaBytes.
+  // Second and half, handle AllocaBytes
   AllocaBytesHandler ABH(M);
   ABH.visit(M);
 
@@ -932,11 +910,6 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   // Third, depromote registers to alloca & canonicalize iN types into i64.
   DepromoteRegisters Deprom;
   Deprom.visit(M);
-
-  // Finally, eleminate unused garbage slots.
-  GarbageSlotEliminator GSE;
-  GSE.visit(*Deprom.getDepromotedModule());
-  GSE.eliminate();
 
   if (verifyModule(M, &errs(), nullptr)) {
     errs() << "BUG: DepromoteRegisters created an ill-formed module!\n";

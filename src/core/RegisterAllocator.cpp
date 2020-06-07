@@ -27,7 +27,6 @@ private:
   set<unsigned> TempRegisters;
   vector<Allocation *> ActiveSet;
   Instruction *CurrentUser;
-
   struct Comparator {
     bool operator() (const Allocation *A1, const Allocation *A2) {
       return A1->NextAdvent < A2->NextAdvent;
@@ -43,7 +42,7 @@ private:
 
   vector<Allocation *>::iterator getVictim(unsigned RegId) {
     vector<Allocation *>::iterator Victim = ActiveSet.end();
-    if (RegId) {  // evict a specific register
+    if (RegId) {
       for (auto I = ActiveSet.begin(), E = ActiveSet.end(); I != E; I++) {
         if ((*I)->RegId == RegId) {
           Victim = I;
@@ -102,9 +101,7 @@ public:
     return RegId;
   }
 
-  /*
-   * update a use information of Source.
-   */
+  // update a use information of Source.
   void update(Instruction *Source, Instruction *User, unsigned NextAdvent) {
     for (auto E : ActiveSet) if (E->Source == Source) {
       E->LastUser = User;
@@ -178,10 +175,7 @@ public:
     FreeRegisters.push(RegId);
   }
 
-  /*
-   * report the current user so that the registers currently being used
-   * will not be evicted.
-   */
+  // report the current user to prevent evicting the registers currently used.
   void reportUser(Instruction *U) {
     CurrentUser = U;
   }

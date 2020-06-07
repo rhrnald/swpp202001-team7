@@ -55,10 +55,8 @@ private:
   map<Instruction *, AllocaInst *> RegToAllocaMap;
   map<PHINode *, AllocaInst *> PhiToTempAllocaMap;
 
-  bool RefSet;      // indicates whether the reference sp is set
-  bool RefSpilled;  // indicates whether the reference sp is spilled 
-
-  // Register Allocation
+  bool RefSet;      // a flag indicates whether the reference sp is set
+  bool RefSpilled;  // whether the reference sp is spilled
   RegisterAllocator *RA;
   map<Instruction *, queue<unsigned>> AdventMap;  // holds next advent timesteps
   map<Instruction *, Value *> SourceToEmitMap;
@@ -101,8 +99,7 @@ private:
 
 
   string assemblyRegisterName(unsigned registerId) {
-    // accept zero for Constant
-    assert(0 <= registerId && registerId <= 16);
+    assert(0 <= registerId && registerId <= 16); // accept zero for Constant
     return "__r" + to_string(registerId) + "__";
   }
   Value *emitLoadFromSrcRegister(Instruction *I, unsigned targetRegisterId) {
@@ -130,7 +127,6 @@ private:
     if (!AdventMap[Source].empty()) NextAdvent = AdventMap[Source].front();
     RA->update(Source, UserInst, NextAdvent);
   }
-
   void evict(RegisterAllocator::Allocation *Alloc) {
     Instruction *Victim = Alloc->Source;
     Instruction *LastUser = Alloc->LastUser;
@@ -140,7 +136,6 @@ private:
       emitStoreToSrcRegister(SourceToEmitMap[Victim], Victim);
     }
   }
-
   unsigned requestRegister(Instruction *I) {
     auto RegId = RA->request(I);
     if (RegId == 0) {
@@ -151,17 +146,14 @@ private:
     reportUse(I, nullptr, false);
     return RegId;
   }
-
   unsigned getRegister(Instruction *I) {
     auto RegId = RA->get(I);
-    if (RegId == 0) {
+    if (RegId == 0) { // must fill
       RegId = requestRegister(I);
-      // fill
       SourceToEmitMap[I] = emitLoadFromSrcRegister(I, RegId);
     }
     return RegId;
   }
-
   unsigned requestTempRegister(unsigned TargetId=0) {
     auto RegId = RA->requestTempRegister(TargetId);
     if (RegId == 0) {
@@ -171,12 +163,9 @@ private:
     }
     return RegId;
   }
-
   void clearRA() {
     RegisterAllocator::Allocation *Alloc;
-    while ((Alloc = RA->evict())) {
-      evict(Alloc);
-    }
+    while ((Alloc = RA->evict())) evict(Alloc);
   }
 
   // Encode the value of V.
@@ -333,21 +322,17 @@ public:
         }
       }
     }
-
     AdventMap.clear();
     SourceToEmitMap.clear();
     CurrentBlock = &BB;
     unsigned timestep = 0;
     for (auto &I : BB) {
-      if (!isa<PHINode>(&I)) {  // phi nodes are not actually use the registers.
-        for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
-          Instruction *Op = dyn_cast<Instruction>(I.getOperand(i));
-          if (Op) AdventMap[Op].push(timestep);
-        }
+      if (!isa<PHINode>(&I)) for (unsigned i = 0, e = I.getNumOperands(); i < e; ++i) {
+        Instruction *Op = dyn_cast<Instruction>(I.getOperand(i));
+        if (Op) AdventMap[Op].push(timestep);
       }
-      // I'll give the 'use' of phi node values to the corresponding terminator
-      // instructions. It makes sense because visitBranchInst and visitSwitchInst
-      // take care of phis.
+      // Give the 'use' of phi node values to the corresponding terminator instructions.
+      // It makes sense since visitBranchInst and visitSwitchInst take care of phis.
       if (I.isTerminator() && !isa<ReturnInst>(&I)) {
         for (unsigned i = 0, e = I.getNumSuccessors(); i < e; ++i) {
           for (auto &Phi : I.getSuccessor(i)->phis()) {
@@ -358,23 +343,6 @@ public:
       }
       timestep += 1;
     }
-    /*
-    outs() << "AdventMap:\n";
-    for (auto &[I, _Q] : AdventMap) {
-      queue<unsigned> Q = _Q;
-      outs() << I->getName() << ":";
-      while (!Q.empty()) {
-        outs() << " " << Q.front();
-        Q.pop();
-      }
-      outs() << "\n";
-    }
-    outs() << "FinalUses:\n";
-    for (auto I : FinalUses[&BB]) {
-      outs() << " - " << I->getName() << "\n";
-    }
-    outs() << "\n";
-    */
 
     Builder = make_unique<IRBuilder<TargetFolder>>(BBToEmit,
         TargetFolder(ModuleToEmit->getDataLayout()));
@@ -392,10 +360,9 @@ public:
            "Alloca is not in the entry block; this algorithm wouldn't work");
 
     checkSrcType(I.getAllocatedType());
-    unsigned RegId = requestRegister(&I);
     // This will be lowered to 'r1 = add sp, <offset>'
     auto *NewAllc = Builder->CreateAlloca(I.getAllocatedType(),
-                                          I.getArraySize(), assemblyRegisterName(RegId));
+                      I.getArraySize(), assemblyRegisterName(requestRegister(&I)));
     SourceToEmitMap[&I] = NewAllc;
   }
   void visitLoadInst(LoadInst &LI) {
@@ -404,8 +371,7 @@ public:
     auto *LoadedTy = TgtPtrOp->getType()->getPointerElementType();
     Value *LoadedVal = nullptr;
 
-    unsigned RegId = requestRegister(&LI);
-    string Reg = assemblyRegisterName(RegId);
+    string Reg = assemblyRegisterName(requestRegister(&LI));
     if (LoadedTy->isIntegerTy() && LoadedTy->getIntegerBitWidth() < 64) {
       // Need to zext.
       // before_zext__ will be recognized by the assembler & merged with 64-bit
@@ -503,9 +469,10 @@ public:
     // i1 -> i64 zext
     string Reg = assemblyRegisterName(requestRegister(&II));
     string Reg_before_zext = Reg + "before_zext__";
-    Value *Res = Builder->CreateZExt(Builder->CreateICmp(
-                          II.getPredicate(), Op1Trunc, Op2Trunc,
-                          Reg_before_zext), I64Ty, Reg);
+    Value *Res =
+      Builder->CreateZExt(
+        Builder->CreateICmp(II.getPredicate(), Op1Trunc, Op2Trunc,
+        Reg_before_zext), I64Ty, Reg);
     SourceToEmitMap[&II] = Res;
   }
   void visitSelectInst(SelectInst &SI) {
@@ -546,8 +513,7 @@ public:
       unsigned sz = getAccessSize(ElemTy);
       if (sz != 1) {
         assert(sz != 0);
-        if (IdxRegId) {
-          // if IdxValue is on a register, do not ruin it!
+        if (IdxRegId) { // if IdxValue is on a register, do not ruin it!
           IdxRegId = requestTempRegister();
           RA->giveUpTempRegister(IdxRegId); // since it's used right away!
         }
@@ -594,9 +560,7 @@ public:
       Op = Builder->CreateMul(Op, ConstantInt::get(I64Ty, (1llu << (64 - bw))), Reg);
       Op = Builder->CreateAShr(Op, 64 - bw, Reg);
     }
-    else {
-      Op = Builder->CreateMul(Op, ConstantInt::get(I64Ty, 1), Reg);
-    }
+    else Op = Builder->CreateMul(Op, ConstantInt::get(I64Ty, 1), Reg);
     SourceToEmitMap[&SI] = Op;
   }
   void visitZExtInst(ZExtInst &ZI) {
@@ -609,22 +573,19 @@ public:
   void visitTruncInst(TruncInst &TI) {
     auto *Op = translateSrcOperandToTgt(TI.getOperand(0), &TI);
     uint64_t Divisor = (1llu << (TI.getDestTy()->getIntegerBitWidth()));
-    unsigned RegId = requestRegister(&TI);
     SourceToEmitMap[&TI] =
       Builder->CreateURem(Op, ConstantInt::get(I64Ty, Divisor), 
-                          assemblyRegisterName(RegId));
+                          assemblyRegisterName(requestRegister(&TI)));
   }
   void visitPtrToIntInst(PtrToIntInst &PI) {
     auto *Op = translateSrcOperandToTgt(PI.getOperand(0), &PI);
-    unsigned RegId = requestRegister(&PI);
     SourceToEmitMap[&PI] =
-      Builder->CreatePtrToInt(Op, I64Ty, assemblyRegisterName(RegId));
+      Builder->CreatePtrToInt(Op, I64Ty, assemblyRegisterName(requestRegister(&PI)));
   }
   void visitIntToPtrInst(IntToPtrInst &II) {
     auto *Op = translateSrcOperandToTgt(II.getOperand(0), &II);
-    unsigned RegId = requestRegister(&II);
-    SourceToEmitMap[&II] =
-      Builder->CreateIntToPtr(Op, II.getType(), assemblyRegisterName(RegId));
+    SourceToEmitMap[&II] = Builder->CreateIntToPtr(Op, II.getType(),
+                                assemblyRegisterName(requestRegister(&II)));
   }
 
   // ---- Call ----
@@ -643,18 +604,15 @@ public:
       // However, don't forget that RefSet is still true!
       RefSpilled = true;
     }
-    else if (RefSpilled) {
-      RA->giveUpTempRegister(RefSPId);
-    }
+    else if (RefSpilled) RA->giveUpTempRegister(RefSPId);
 
     SmallVector<Value *, 16> Args;
     for (auto I = CI.arg_begin(), E = CI.arg_end(); I != E; ++I) {
       Args.emplace_back(translateSrcOperandToTgt(*I, &CI));
     }
     if (CI.hasName()) {
-      unsigned RegId = requestRegister(&CI);
       Value *Res = Builder->CreateCall(CalledFInTgt, Args,
-                                       assemblyRegisterName(RegId));
+                              assemblyRegisterName(requestRegister(&CI)));
       SourceToEmitMap[&CI] = Res;
     } else {
       Builder->CreateCall(CalledFInTgt, Args);
@@ -745,9 +703,8 @@ public:
     // PHI: Absorbing the tmp_slot
     assert(RegToAllocaMap.count(&PN));
     assert(PhiToTempAllocaMap.count(&PN));
-    unsigned RegId = requestRegister(&PN);
-    SourceToEmitMap[&PN] = 
-      Builder->CreateLoad(PhiToTempAllocaMap[&PN], assemblyRegisterName(RegId));
+    SourceToEmitMap[&PN] = Builder->CreateLoad(PhiToTempAllocaMap[&PN],
+                                assemblyRegisterName(requestRegister(&PN)));
   }
 
   // ---- For Debugging -----

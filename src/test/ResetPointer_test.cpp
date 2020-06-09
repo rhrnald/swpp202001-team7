@@ -7,13 +7,12 @@
 #include "gtest/gtest.h"
 
 #include "../passes/Wrapper.h"
+#include "../passes/ResetPointer.h"
 
 using namespace llvm;
 using namespace std;
 
-#ifdef REORDER_MEM_ACCESS
 
-void ResetPointer(Module *M);
 
 TEST(PassCheck, ResetPointerTest) {
   // Create an IR Module.
@@ -53,19 +52,36 @@ TEST(PassCheck, ResetPointerTest) {
   bool exist_reset_heap=false;
   bool exist_reset_stack=false;
 
+
+  int state=UNKNOWN;
   for (auto &F : *M) for (auto &BB : F) {
     if(BB.getName()=="entry") {
       for(auto &inst : BB.getInstList()) {
         if (auto *CI = dyn_cast<CallInst>(&inst)) {
-          if(CI->getCalledFunction()->getName() == "__reset_heap__") exist_reset_heap=true;
-          if(CI->getCalledFunction()->getName() == "__reset_stack__") exist_reset_stack=true;
+          if(CI->getCalledFunction()->getName() == "__reset_heap__") {
+            state=HEAP;
+            continue;
+          }
+          if(CI->getCalledFunction()->getName() == "__reset_stack__") {
+            state=STACK;
+            continue;
+          }
+        }
+        int cur=getAccessType(&inst);
+        if(cur==NOEFFECT) continue;
+        if(cur==UNKNOWN) {state=UNKNOWN; continue;}
+        if(cur==STACK) {
+          EXPECT_NE(state, HEAP);
+          state=STACK;
+          continue;
+        }
+        if(cur==HEAP) {
+          EXPECT_NE(state, STACK);
+          state=HEAP;
+          continue;
         }
       }
     }
   }
-
-  EXPECT_EQ(exist_reset_heap, true);
-  EXPECT_EQ(exist_reset_stack, true);
 }
 
-#endif

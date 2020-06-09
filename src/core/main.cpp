@@ -167,6 +167,8 @@ int main(int argc, char **argv) {
 
   if (!excepted("CheckConstExpr", exceptList))
     MPM.addPass(CheckConstExpr());
+  if (!excepted("MemUseOptimization", exceptList))
+    MPM.addPass(MemUseOptimization());
   if (!excepted("PackRegisters", exceptList))
     MPM.addPass(PackRegisters());
   

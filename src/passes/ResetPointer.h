@@ -9,7 +9,7 @@ using namespace llvm;
 const std::string ResetStackName = "__reset_stack__";
 const std::string ResetHeapName = "__reset_heap__";
 
-enum AllocType {STACK, HEAP, UNKNOWN, CALL};
+enum AllocType {STACK, HEAP, UNKNOWN, CALL, NOEFFECT};
 
 bool isMallocCall(const CallInst *CI);
 bool isAllocaByteCall(const CallInst *CI);

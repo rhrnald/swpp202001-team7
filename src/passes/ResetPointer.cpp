@@ -30,18 +30,18 @@ AllocType getOpType(const Value *V) {
 AllocType getAccessType(const Value *V) {
   if (auto *CI = dyn_cast<CallInst>(V)) {
     if (isMallocCall(CI))
-      return UNKNOWN;
+      return NOEFFECT;
     if (isFreeCall(CI))
-      return UNKNOWN;
+      return NOEFFECT;
     if (isAllocaByteCall(CI)) 
-      return UNKNOWN;
+      return NOEFFECT;
     return CALL;
   } else if (auto *LI = dyn_cast<LoadInst>(V)) {
     return getOpType(LI->getPointerOperand());
   } else if (auto *SI = dyn_cast<StoreInst>(V)) {
     return getOpType(SI->getPointerOperand());
   }
-  return UNKNOWN;
+  return NOEFFECT;
 }
 
 void ResetPointer(Module *M) {
@@ -56,10 +56,10 @@ void ResetPointer(Module *M) {
     int state=UNKNOWN;
     for(auto &itr : BB) {
         int cur = getAccessType(&itr);
-        if(cur==UNKNOWN) {
+        if(cur==NOEFFECT) {
           continue;
         }
-        if(cur==CALL) {
+        if(cur==CALL || cur==UNKNOWN) {
           state=UNKNOWN;
           continue;
         }
@@ -76,11 +76,11 @@ void ResetPointer(Module *M) {
     }
     if(s.empty() && h.empty()) continue;
     for(auto &iptr : s) {
-      CallInst *I = CallInst::Create(reset_stack->getFunctionType(), reset_stack, {}, "");
+      CallInst *I = CallInst::Create(reset_stack);//->getFunctionType(), reset_stack, {}, "");
       I->insertBefore(iptr);
     }
     for(auto &iptr : h) {
-      CallInst *I = CallInst::Create(reset_heap->getFunctionType(), reset_heap, {}, "");
+      CallInst *I = CallInst::Create(reset_heap);//->getFunctionType(), reset_heap, {}, "");
       I->insertBefore(iptr);
     }
   }

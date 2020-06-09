@@ -14,6 +14,7 @@ const std::string SetRefName = "__set_ref__";
 const std::string SpillRefName = "__spill_ref__";
 const std::string RefSP = "r16";
 const unsigned RefSPId = 16;
+const unsigned STACK_SAFE_REGION = 5120;
 
 class Backend : public llvm::PassInfoMixin<Backend> {
   std::string outputFile;

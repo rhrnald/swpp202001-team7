@@ -10,6 +10,8 @@
 using namespace llvm;
 using namespace std;
 
+static unsigned GVStackUsage = 0;
+
 namespace {
 
 string getAccessSizeInStr(Type *T) {
@@ -529,6 +531,13 @@ public:
 void AssemblyEmitter::run(Module *DepromotedM) {
   AssemblyEmitterImpl Em;
   unsigned TotalStackUsage = 0;
+  unsigned GVStackUsage = 0;
+  for (auto &F : *DepromotedM) {
+    if (F.isDeclaration() && F.getName().substr(0, 19) == "__set_global_stack_") {
+      string FName = F.getName();
+      GVStackUsage = atoi(FName.substr(19).c_str());
+    }
+  }
   for (auto &F : *DepromotedM) {
     if (F.isDeclaration() || F.getName() == GetSPName)
       continue;
@@ -537,6 +546,9 @@ void AssemblyEmitter::run(Module *DepromotedM) {
     *fout << "\n";
     *fout << "; Function " << F.getName() << "\n";
     *fout << "start " << F.getName() << " " << F.arg_size() << ":\n";
+
+    if (F.getName() == "main") 
+      Em.CurrentStackFrame.UsedStackSize += GVStackUsage;
 
     assert(Em.FnBody.size() > 0);
     raiseErrorIf(Em.CurrentStackFrame.UsedStackSize >= 10240,

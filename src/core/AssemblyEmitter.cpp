@@ -159,8 +159,6 @@ public:
 
 class AssemblyEmitterImpl : public InstVisitor<AssemblyEmitterImpl> {
 public:
-  const string RefSP = "r16";
-
   vector<string> FnBody;
   StackFrame CurrentStackFrame;
 

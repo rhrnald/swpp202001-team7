@@ -3,28 +3,35 @@
 #include <stack>
 #include <set>
 #include <cstdlib>
+#include <algorithm>
 
-// Since the current Backend is using r1-r3, let's just use r4-r16.
 #define MAX_REG_N 16
-#define MIN_REG_N 4
+#define MIN_REG_N 1
 
 using namespace llvm;
 using namespace std;
 
 class RegisterAllocator {
 public:
+  static const unsigned NO_MORE_ADVENT = -1;
   struct Allocation {
-    Value *EmitValue;
-    Instruction *Requester;
-    unsigned RegId;
-    Allocation(Value *V, Instruction *I, unsigned Id)
-                : EmitValue(V), Requester(I), RegId(Id) {}
+    Instruction *Source;
+    Instruction *LastUser;
+    unsigned RegId, NextAdvent;
+    Allocation(Instruction *S, unsigned RI)
+                : Source(S), LastUser(nullptr), RegId(RI), NextAdvent(0) {}
   };
 
 private:
   stack<unsigned> FreeRegisters;
   set<unsigned> TempRegisters;
   vector<Allocation *> ActiveSet;
+  Instruction *CurrentUser;
+  struct Comparator {
+    bool operator() (const Allocation *A1, const Allocation *A2) {
+      return A1->NextAdvent < A2->NextAdvent;
+    }
+  } Cmp;
 
   unsigned allocateNewRegister() {
     if (FreeRegisters.empty()) return 0;
@@ -34,7 +41,7 @@ private:
   }
 
   vector<Allocation *>::iterator getVictim(unsigned RegId) {
-    vector<Allocation *>::iterator Victim;
+    vector<Allocation *>::iterator Victim = ActiveSet.end();
     if (RegId) {
       for (auto I = ActiveSet.begin(), E = ActiveSet.end(); I != E; I++) {
         if ((*I)->RegId == RegId) {
@@ -44,9 +51,17 @@ private:
       }
     }
     else {
-      // random policy
-      Victim = ActiveSet.begin() + (rand() % ActiveSet.size());
+      // optimal policy - evict whose next advent is the latest
+      // must not evict the register which is used by the current user.
+      auto HeapEnd = ActiveSet.end();
+      while (CurrentUser && (*ActiveSet.begin())->LastUser == CurrentUser) {
+        pop_heap(ActiveSet.begin(), HeapEnd, Cmp);
+        HeapEnd -= 1;
+        assert(HeapEnd != ActiveSet.begin());
+      }
+      Victim = ActiveSet.begin();
     }
+    assert(Victim != ActiveSet.end());
     return Victim;
   }
 
@@ -56,35 +71,45 @@ public:
     for (unsigned i = MAX_REG_N; i >= MIN_REG_N; --i) {
       FreeRegisters.push(i);
     }
+    CurrentUser = nullptr;
   }
 
   /*
-   * find V in the allocated register.
+   * find I as Source in the allocated register.
    * return the id if it exists, zero o.w.
    */
-  unsigned get(Value *V) {
+  unsigned get(Instruction *Source) {
     for (auto E : ActiveSet) {
-      if (E->EmitValue == V) return E->RegId;
+      if (E->Source == Source) return E->RegId;
     }
     return 0;
   }
 
   /*
-   * allocate a new register for V.
-   * return the new Allocation on success, zero o.w.
-   * the requester should fill in the Alloc->Emit.
+   * allocate a new register for Source.
+   * return the new register id on success, zero o.w.
    */
-  Allocation *request(Value *V, Instruction *I) {
+  unsigned request(Instruction *Source) {
     for (auto E : ActiveSet) {
-      assert(E->EmitValue != V && "Requested Value is already allocated.");
+      assert(E->Source != Source && "Requested Source is already allocated.");
     }
     unsigned RegId = allocateNewRegister();
     if (RegId) {
-      auto Alloc = new Allocation(V, I, RegId);
+      auto Alloc = new Allocation(Source, RegId);
       ActiveSet.push_back(Alloc);
-      return Alloc;
     }
-    return nullptr;
+    return RegId;
+  }
+
+  // update a use information of Source.
+  void update(Instruction *Source, Instruction *User, unsigned NextAdvent) {
+    for (auto E : ActiveSet) if (E->Source == Source) {
+      E->LastUser = User;
+      E->NextAdvent = NextAdvent;
+      make_heap(ActiveSet.begin(), ActiveSet.end(), Cmp);
+      return;
+    }
+    assert(!"update is called with an unallocated Source!");
   }
 
   /*
@@ -92,16 +117,17 @@ public:
    * return the evicted Instruction.
    * evict a specific register when RegId is given.
    */
-  Instruction *evict(unsigned RegId = 0) {
+  Allocation *evict(unsigned RegId = 0) {
     if (ActiveSet.size() == 0) return nullptr;
     if (RegId) assert(TempRegisters.count(RegId) == 0);
-    auto Victim = getVictim(RegId);
-    auto VictimRequester = (*Victim)->Requester;
-    auto VictimId = (*Victim)->RegId;
+    auto VictimIter = getVictim(RegId);
+    auto Victim = *VictimIter;
+    auto VictimId = Victim->RegId;
     
-    ActiveSet.erase(Victim);
+    ActiveSet.erase(VictimIter);
+    make_heap(ActiveSet.begin(), ActiveSet.end(), Cmp);
     FreeRegisters.push(VictimId);
-    return VictimRequester;
+    return Victim;
   }
 
   // Here are the methods for temp registers. One might need registers
@@ -118,18 +144,18 @@ public:
   // Note that RegId cannot be already in TempRegisters!
   unsigned requestTempRegister(unsigned RegId) {
     assert(TempRegisters.count(RegId) == 0);
+    if (RegId == 0) return requestTempRegister();
     stack<unsigned> Temp;
     unsigned FoundId = 0;
     // Find RegId
     while (!FreeRegisters.empty()) {
       if (FreeRegisters.top() == RegId) {
         FoundId = RegId;
-        break;
       }
       else {
         Temp.push(FreeRegisters.top());
-        FreeRegisters.pop();
       }
+      FreeRegisters.pop();
     }
     // Refill the stack
     while (!Temp.empty()) {
@@ -147,5 +173,10 @@ public:
            "Cannot give up an unrequested temp register.");
     TempRegisters.erase(RegId);
     FreeRegisters.push(RegId);
+  }
+
+  // report the current user to prevent evicting the registers currently used.
+  void reportUser(Instruction *U) {
+    CurrentUser = U;
   }
 };

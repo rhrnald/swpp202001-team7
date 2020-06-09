@@ -739,8 +739,11 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
     exit(1);
   }
 
+  Module *DepromoteM = Deprom.getDepromotedModule();
+  ResetPointer(DepromoteM);
+
   AssemblyEmitter Emitter(os);
-  Emitter.run(Deprom.getDepromotedModule());
+  Emitter.run(DepromoteM);
 
   if (os != &outs()) delete os;
 

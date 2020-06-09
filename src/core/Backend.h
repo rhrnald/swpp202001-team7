@@ -5,14 +5,13 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
+#include "../passes/ResetPointer.h"
 #include <string>
 
 const std::string AllocaBytesName = "__alloca_bytes__";
 const std::string FreeBytesName = "__free_bytes__";
 const std::string SetRefName = "__set_ref__";
 const std::string SpillRefName = "__spill_ref__";
-const std::string ResetStackName = "__reset_stack__";
-const std::string ResetHeapName = "__reset_heap__";
 
 class Backend : public llvm::PassInfoMixin<Backend> {
   std::string outputFile;

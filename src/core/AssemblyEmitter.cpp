@@ -448,7 +448,7 @@ public:
     if (FnName == GetSPName) {
       string DestReg = getRegisterNameFromInstruction(&CI, false);
       emitAssembly(";", {GetSPName});
-      emitAssembly(DestReg, "mul", {"sp", "1", "64"});
+      emitCopy(DestReg, "sp");
       return;
     }
 

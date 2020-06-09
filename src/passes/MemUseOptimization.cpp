@@ -3,6 +3,12 @@
 using namespace llvm;
 using namespace std;
 
+static bool isCallInstOfThis(Instruction *I, Function *F) {
+  if (CallInst *CI = dyn_cast<CallInst>(I)) {
+    return CI->getCalledFunction() == F;
+  } else return false;
+}
+
 PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM) {
   LLVMContext &Context = M.getContext();
   Type *I64Ty = Type::getInt64Ty(Context);
@@ -40,10 +46,6 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
     GetSPFn = Function::Create(GetSPTy, Function::ExternalLinkage, GetSPFnName, M);
   }
 
-  // GetSPFn should not be inlined
-  if (!GetSPFn->hasFnAttribute(Attribute::NoInline))
-    GetSPFn->addFnAttr(Attribute::NoInline);
-
   // Fetch malloc and free instruction in main, that are not on any loops
   vector<CallInst*> MallocInsts;
   vector<CallInst*> FreeInsts;
@@ -51,12 +53,20 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
   FunctionAnalysisManager &FAM
     = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
   LoopInfo LI(FAM.getResult<DominatorTreeAnalysis>(*MainFn));
-  for (auto &BB : *MainFn) {
-    if (LI.getLoopFor(&BB)) continue; // Ignore loop blocks
-    for (auto &I : BB) {
-      if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-        if (CI->getCalledFunction() == MallocFn) MallocInsts.push_back(CI);
-        if (CI->getCalledFunction() == FreeFn) FreeInsts.push_back(CI);
+  for (auto &F : M) {
+    if (&F == MainFn) for (auto &BB : F) {
+      if (LI.getLoopFor(&BB)) for (auto &I : BB) {
+        if (isCallInstOfThis(&I, FreeFn)) return PreservedAnalyses::all();
+      }
+      for (auto &I : BB) {
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          if (CI->getCalledFunction() == MallocFn) MallocInsts.push_back(CI);
+          if (CI->getCalledFunction() == FreeFn) FreeInsts.push_back(CI);
+        }
+      }
+    } else for (auto &BB : F) {
+      for (auto &I : BB) {
+        if (isCallInstOfThis(&I, FreeFn)) return PreservedAnalyses::all();
       }
     }
   }
@@ -81,7 +91,7 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
 
     // Basic Block Conditional Branch Update
     auto *CurrentSP = CallInst::Create(GetSPTy, GetSPFn, {}, "cur.sp");
-    auto *SubSP = llvm::BinaryOperator::CreateSub(CurrentSP, AllocSize, "lookahead.sp");
+    auto *SubSP = BinaryOperator::CreateSub(CurrentSP, AllocSize, "lookahead.sp");
     auto *CmpSP = new ICmpInst(ICmpInst::ICMP_SGE, SubSP,
                         ConstantInt::get(I64Ty, STACK_DANGEROUS_REGION), "is.safe.sp");
     auto *BrSP = BranchInst::Create(AllocaBB, MallocBB, CmpSP);

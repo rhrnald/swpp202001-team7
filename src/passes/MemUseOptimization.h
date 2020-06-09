@@ -3,8 +3,6 @@
 
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/IRBuilder.h"
 
 using namespace llvm;
 

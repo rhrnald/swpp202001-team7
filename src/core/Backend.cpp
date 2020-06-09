@@ -129,10 +129,9 @@ private:
   void evict(RegisterAllocator::Allocation *Alloc) {
     Instruction *Victim = Alloc->Source;
     Instruction *LastUser = Alloc->LastUser;
-    if (Victim->getParent() == CurrentBlock) if (!AdventMap[Victim].empty() ||
-        !LastUser || FinalUses[LastUser->getParent()].count(Victim) == 0) {
-      // must spill
-      emitStoreToSrcRegister(SourceToEmitMap[Victim], Victim);
+    if (Victim->getParent() == CurrentBlock && (!AdventMap[Victim].empty() ||
+        !LastUser || FinalUses[LastUser->getParent()].count(Victim) == 0)) {
+      emitStoreToSrcRegister(SourceToEmitMap[Victim], Victim); // must spill
     }
   }
   unsigned requestRegister(Instruction *I) {

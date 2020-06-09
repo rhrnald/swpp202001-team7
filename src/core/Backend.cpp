@@ -649,13 +649,10 @@ public:
   }
 
   void eliminate() {
-    unsigned cnt = 0;
     while (!garbages.empty()) {
       garbages.front()->setName(garbages.front()->getName() + "_garbage");
       garbages.pop();
-      cnt += 1;
     }
-    if (cnt) outs() << "Garbage Slot Elimination DONE! " << cnt << " slots are eliminated." << "\n";
   }
 };
 

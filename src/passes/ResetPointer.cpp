@@ -36,6 +36,10 @@ AllocType getOpType(const Value *V) {
     return getOpType(GI->getPointerOperand());
   } else if (auto *BCO = dyn_cast<BitCastOperator>(V)) {
     return getOpType(BCO->getOperand(0));
+  } else if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+    AllocType op1 = getOpType(BO->getOperand(0));
+    if(op1!=UNKNOWN) return op1;
+    return getOpType(BO->getOperand(1));
   }
   return UNKNOWN;
 }

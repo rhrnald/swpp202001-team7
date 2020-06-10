@@ -1,15 +1,27 @@
 #include "ResetPointer.h"
 
-
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/IR/InstVisitor.h"
+#include <string>
 
 using namespace llvm::PatternMatch;
 using namespace std;
 using namespace llvm;
 
+bool hasSlotSuffix(StringRef a) {
+  string suffix = "_slot";
+  int sz = (int)a.size();
+  if(sz<5) return false;
+  return a.substr(sz - 5, sz) == suffix;
+}
+
+
 AllocType getOpType(const Value *V) {
+  if (hasSlotSuffix(V->getName())) {
+    return STACK;
+  }
+
   if (auto *CI = dyn_cast<CallInst>(V)) {
     if (isMallocCall(CI))
       return HEAP;

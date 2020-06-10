@@ -280,6 +280,7 @@ public:
 
   // ---- Memory operations ----
   void visitAllocaInst(AllocaInst &I) {
+    if (ends_with(I.getName().str(), "_garbage")) return;
     CurrentStackFrame.addAlloca(&I);
 
     if (shouldBeMappedToAssemblyRegister(&I)) {

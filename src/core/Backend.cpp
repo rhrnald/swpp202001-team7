@@ -749,6 +749,25 @@ public:
   }
 };
 
+class GarbageSlotEliminator : public InstVisitor<GarbageSlotEliminator> {
+private:
+  queue<Instruction *> garbages;
+
+public:
+  void visitAllocaInst(AllocaInst &I) {
+    if (I.getNumUses() == 0) {
+      garbages.push(&I);
+    }
+  }
+
+  void eliminate() {
+    while (!garbages.empty()) {
+      garbages.front()->setName(garbages.front()->getName() + "_garbage");
+      garbages.pop();
+    }
+  }
+};
+
 class AllocaBytesHandler : public InstVisitor<AllocaBytesHandler> {
 private:
   Function *SetRefFn, *SpillRefFn, *FreeBytesFn;
@@ -865,6 +884,11 @@ PreservedAnalyses Backend::run(Module &M, ModuleAnalysisManager &MAM) {
   // Third, depromote registers to alloca & canonicalize iN types into i64.
   DepromoteRegisters Deprom;
   Deprom.visit(M);
+
+  // Finally, eleminate unused garbage slots.
+  GarbageSlotEliminator GSE;
+  GSE.visit(*Deprom.getDepromotedModule());
+  GSE.eliminate();
 
   if (verifyModule(M, &errs(), nullptr)) {
     errs() << "BUG: DepromoteRegisters created an ill-formed module!\n";

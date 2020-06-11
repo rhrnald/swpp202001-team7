@@ -13,7 +13,7 @@ enum AllocType {
   STACK, HEAP, UNKNOWN, CALL
 };
 
-static bool isMallocCall(const CallInst *CI) {
+bool isMallocCall(const CallInst *CI) {
   // Assume that it is undefined behavior for a program to define a
   // 'malloc' function.
   // Actually this is what C standard says. :) "malloc" is categorized as a
@@ -28,10 +28,10 @@ static bool isMallocCall(const CallInst *CI) {
   //   identifier as a macro name, the behavior is undefined.
   return CI->getCalledFunction()->getName() == "malloc";
 }
-static bool isAllocaByteCall(const CallInst *CI) {
+bool isAllocaByteCall(const CallInst *CI) {
   return CI->getCalledFunction()->getName() == "__alloca_bytes__";
 }
-static bool isFreeCall(const CallInst *CI) {
+bool isFreeCall(const CallInst *CI) {
   return CI->getCalledFunction()->getName() == "free";
 }
 // A very simple getBlockType().

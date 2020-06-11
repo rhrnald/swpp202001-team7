@@ -438,6 +438,15 @@ public:
       }
       return;
     }
+    if (FnName == ResetStackName) {
+      emitAssembly("reset", {"stack"});
+      return;
+    }
+
+    if (FnName == ResetHeapName) {
+      emitAssembly("reset", {"heap"});
+      return;
+    }
     if (FnName == FreeBytesName) {
       string Size = getOperand(*CI.arg_begin()).first;
       emitAssembly(";", {FreeBytesName, Size});

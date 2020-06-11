@@ -5,6 +5,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
+#include "../passes/ResetPointer.h"
 #include <string>
 
 const std::string AllocaBytesName = "__alloca_bytes__";

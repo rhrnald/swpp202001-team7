@@ -9,7 +9,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Scalar/ADCE.h"
-#include "llvm/ADT/Hashing.h"
+#include "llvm/Support/SHA1.h"
 
 //Our Optimization
 #include "../passes/Wrapper.h"
@@ -17,7 +17,12 @@
 //Additional Pass
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 
+//Hashing
 #include <string>
+#include <ctime>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
 
 //For Builtin Pass Runner
 #include "./LLVMPath.h"
@@ -25,6 +30,7 @@
 using namespace std;
 using namespace llvm;
 
+static string moduleHash = "";
 
 static cl::OptionCategory optCategory("SWPP Compiler options");
 
@@ -90,12 +96,38 @@ bool excepted(const char *c , vector<string> &list) {
   return false;
 }
 
+static void prepareHash(unique_ptr<Module> &M) {
+  SHA1 Hasher;
+
+  string moduleStr;
+  raw_string_ostream moduleOs(moduleStr);
+  moduleOs << *M;
+  moduleOs.flush();
+  Hasher.update(moduleStr);
+
+  auto timeInfo = std::time(nullptr);
+  auto ltimeInfo = *std::localtime(&timeInfo);
+  std::ostringstream timeOs;
+  timeOs << std::put_time(&ltimeInfo, "%d-%m-%Y %H-%M-%S");
+  auto timeStr = timeOs.str();
+  Hasher.update(timeStr);
+
+  StringRef hashResult = Hasher.result();
+  for (auto &c : hashResult) {
+    int d = ((int) c + 256) % 256;
+    char a = 'A' + (d / 16);
+    char b = 'A' + (d % 16);
+    moduleHash += a;
+    moduleHash += b;
+  }
+}
+
 // Run builtin optimizations using LLVMBIN/opt
 static void runBuiltinOpt(string OptPipeline, unique_ptr<Module> &M) {
   // System call to run builtin passes using `opt`.
   error_code EC;
-  string InLL = ".input.ll";
-  string OutLL = ".outputLL";
+  string InLL = ".input." + moduleHash + ".ll";
+  string OutLL = ".output." + moduleHash + ".ll";
   raw_fd_ostream PrevModuleOut(InLL, EC);
 
   // Print the previous module info
@@ -121,6 +153,8 @@ int main(int argc, char **argv) {
   auto M = openInputFile(Context, optInput);
   if (!M)
     return 1;
+
+  prepareHash(M);
 
   LoopAnalysisManager LAM;
   FunctionAnalysisManager FAM;

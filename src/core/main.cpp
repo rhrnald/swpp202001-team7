@@ -9,6 +9,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Scalar/ADCE.h"
+#include "llvm/ADT/Hashing.h"
 
 //Our Optimization
 #include "../passes/Wrapper.h"
@@ -137,18 +138,26 @@ int main(int argc, char **argv) {
   vector<string> exceptList;
   split(exPassList, exceptList);
 
-  if (!excepted("LoopOptimization", exceptList)) {
-    // Loop builtin optimizations
-    string LoopPrePasses = "-loop-simplify -loop-deletion -lcssa -licm -loop-distribute";
-    string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-reduce -loop-simplifycfg -loop-rotate";
-    string LoopMainPasses = "-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder -unroll-threshold=100";
-    string LoopEndPasses = "-instcombine -simplifycfg -loop-instsimplify -instcombine -aggressive-instcombine";
+  string BuiltinPre = "-basicaa -aa -adce -callsite-splitting -consthoist -constprop -correlated-propagation "
+                      "-dce -globaldce -globalopt -globals-aa -globalsplit -gvn -gvn-hoist -gvn-sink -indvars "
+                      "-irce -pgo-icall-prom -sccp -simplifycfg -tailcallelim -inline";
+  runBuiltinOpt(BuiltinPre, M);
 
+  if (!excepted("LoopOptimization", exceptList)) {
+    // Loop builtin optimizations; Added inline
+    string LoopPrePasses = "-loop-deletion -lcssa -loop-distribute";
+    string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-simplifycfg";
+    string LoopMainPasses = "-loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder -unroll-threshold=100 -loop-rotate -loop-interchange";
+    string LoopEndPasses = "-instcombine -loop-instsimplify -instcombine";
+    
     runBuiltinOpt(LoopPrePasses, M);
     runBuiltinOpt(LoopBasicPasses, M);
     runBuiltinOpt(LoopMainPasses, M);
     runBuiltinOpt(LoopEndPasses, M);
   }
+
+  string BuiltinPost = "-die -dse";
+  runBuiltinOpt(BuiltinPost, M);
 
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FunctionPassManager FPM;

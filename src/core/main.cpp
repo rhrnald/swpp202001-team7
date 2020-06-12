@@ -172,9 +172,9 @@ int main(int argc, char **argv) {
   vector<string> exceptList;
   split(exPassList, exceptList);
 
-  string BuiltinPre = "-basicaa -aa -adce -callsite-splitting -consthoist -constprop -correlated-propagation "
-                      "-dce -globaldce -globalopt -globals-aa -globalsplit -gvn -gvn-hoist -gvn-sink -indvars "
-                      "-irce -pgo-icall-prom -sccp -simplifycfg -tailcallelim -inline";
+  string BuiltinPre = "-gvn -gvn-hoist -gvn-sink "
+                      "-simplifycfg -tailcallelim -inline";
+
   runBuiltinOpt(BuiltinPre, M);
 
   if (!excepted("LoopOptimization", exceptList)) {
@@ -190,8 +190,7 @@ int main(int argc, char **argv) {
     runBuiltinOpt(LoopEndPasses, M);
   }
 
-  string BuiltinPost = "-die -dse";
-  runBuiltinOpt(BuiltinPost, M);
+ // runBuiltinOpt(BuiltinPost, M);
 
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FunctionPassManager FPM;
@@ -212,11 +211,11 @@ int main(int argc, char **argv) {
     MPM.addPass(CheckConstExpr());
   if (!excepted("MemUseOptimization", exceptList))
     MPM.addPass(MemUseOptimization());
-  if (!excepted("PackRegisters", exceptList))
-    MPM.addPass(PackRegisters());
+/*  if (!excepted("PackRegisters", exceptList))
+    MPM.addPass(PackRegisters());*/
   
-  if (!excepted("ReorderMemAccess", exceptList))
-    MPM.addPass(ReorderMemAccess());
+/*  if (!excepted("ReorderMemAccess", exceptList))
+    MPM.addPass(ReorderMemAccess());*/
     
   if (!excepted("WeirdArithmetic", exceptList))
     MPM.addPass(WeirdArithmetic());

@@ -12,7 +12,8 @@ Programs on this project are divided into the three parts.
     * Also, there are several passes from TA's repository.
   * Test(`src/test`)
     * It contains codes for testing (unit tests(googletest + shell) and case tests).
-    * It will be used to make the vanilla compiler to compare with.
+    * It will be used to make the vanilla compiler to compare with (default).
+    * Case tests are done concurrently.
 
 To execute a c code, we need to turn it into a machine friendly language. It can be done with gcc compiler easily, but it's too easy that it's hard to expect good performance.
 
@@ -27,11 +28,15 @@ Our test code will compare the outputs and costs between the optimized compiler 
 ## How to run project
 
 * Build
+  
   ```bash
+  ./configure.sh <LLVM-BIN> <THREADS NUM(default is 8 if omitted)>
   make #or make all
-  ```
+```
+  `./configure.sh` is to generate a proper `Makefile` inside the repository. The `<THREADS NUM>` is used for the concurrent case test.
+  
   ```make``` command will automatically build 3 executable programs inside ```bin``` directory: sf-compiler-team7, interpret, sf-compiler-test-team7, sf-compiler-vanilla.
-
+  
 * Test
   ```bash
   make test
@@ -41,7 +46,7 @@ Our test code will compare the outputs and costs between the optimized compiler 
   If you want to compare the results between `[ALL PASSES] - [SOME PASSES]` and `[ALL PASSES]`, then you can use:
   
   ```bash
-  make test WeirdArith,PackRegister
+  make test PASSES="WeirdArith,PackRegister"
   ```
 
 
@@ -103,4 +108,6 @@ Our test code will compare the outputs and costs between the optimized compiler 
 
 ## Optimization Benchmarks
 
-![alt text](documents/resources/plot_benchmark.png "Plotting Result")
+![alt text](documents/resources/plot_sp3_vanilla.png "Plotting Result")
+
+<center>Plotting Result of SP3 vs Vanilla Compiler, y-axis is [SP3 cost] / [Vanilla Cost], Low value is better</center>

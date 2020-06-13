@@ -62,7 +62,7 @@ after running `make test`. You need to install `python3`, `numpy`, `matplotlib` 
 
 #### Jiyong Kang
 
-* Made a _**brilliant**_ block-level Register Allocation mechanism.
+* Made an efficient block-level Register Allocation mechanism.
 * Made a garbage slot elimination on the backend to reduce the stack usage.
 
 #### Chaewon Kim
@@ -691,7 +691,7 @@ define i32 @main() #0 {
      %and = and i32 %conv, %conv3
      %tobool = icmp ne i32 %and, 0
     br i1 %tobool, label %while.body, label %while.end
-  
+    
   while.body:                                       ; preds = %while.cond
     %add = add i64 %i.0, %i.0
     br label %while.cond

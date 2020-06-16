@@ -35,6 +35,32 @@ bool isFreeCall(const CallInst *CI) {
   return CI->getCalledFunction()->getName() == "free";
 }
 
+AllocType getBlockType(const Value *V) {
+  if (auto *CI = dyn_cast<CallInst>(V)) {
+    if (isMallocCall(CI))
+      return HEAP;
+    if (isFreeCall(CI))
+      return HEAP;
+    if (isAllocaByteCall(CI)) 
+      return STACK;
+    return CALL;
+  } else if (auto *AI = dyn_cast<AllocaInst>(V)) {
+    return STACK;
+  } else if (auto *BI = dyn_cast<BitCastInst>(V)) {
+    return getBlockType(BI->getOperand(0));
+  } else if (auto *GI = dyn_cast<GetElementPtrInst>(V)) {
+    return getBlockType(GI->getPointerOperand());
+  } else if (auto *LI = dyn_cast<LoadInst>(V)) {
+    return getBlockType(LI->getPointerOperand());
+  } else if (auto *SI = dyn_cast<StoreInst>(V)) {
+    return getBlockType(SI->getPointerOperand());
+  } else if (auto *GV = dyn_cast<GlobalVariable>(V)) {
+    return HEAP;
+  } else if (auto *BCO = dyn_cast<BitCastOperator>(V)) {
+    return getBlockType(BCO->getOperand(0));
+  }
+  return UNKNOWN;
+}
 AllocType getOpTypeReorder(const Value *V) {
   if (auto *CI = dyn_cast<CallInst>(V)) {
     if (isMallocCall(CI))
@@ -52,10 +78,6 @@ AllocType getOpTypeReorder(const Value *V) {
     return getOpTypeReorder(GI->getPointerOperand());
   } else if (auto *BCO = dyn_cast<BitCastOperator>(V)) {
     return getOpTypeReorder(BCO->getOperand(0));
-  } else if (auto *LI = dyn_cast<LoadInst>(V)) {
-    return getOpTypeReorder(LI->getPointerOperand());
-  } else if (auto *SI = dyn_cast<StoreInst>(V)) {
-    return getOpTypeReorder(SI->getPointerOperand());
   } else if (auto *GV = dyn_cast<GlobalVariable>(V)) {
     return HEAP;
   } else if (auto *BO = dyn_cast<BinaryOperator>(V)) {
@@ -114,7 +136,7 @@ PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
     dom.resize(n), type.resize(n), cnt.resize(n), used.resize(n);
 
     for(int i=0; i<n; i++) {
-      type[i]=getOpTypeReorder(Insts[i]);
+      type[i]=getBlockType(Insts[i]);
       used[i]=0;
     }
     
@@ -152,10 +174,12 @@ PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
       }
 
       //Change blocking.
-      //block=STACK+HEAP-block;
+      block=STACK+HEAP-block;
+      /*
       if (block==HEAP) block=STACK;
       else if (block==STACK) block=UNKNOWN;
       else block=HEAP;
+      */
     }
 
     //clear Block

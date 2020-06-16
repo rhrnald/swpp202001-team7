@@ -9,6 +9,7 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Transforms/Scalar/SROA.h"
 #include "llvm/Transforms/Scalar/ADCE.h"
+#include "llvm/Support/SHA1.h"
 
 //Our Optimization
 #include "../passes/Wrapper.h"
@@ -16,7 +17,12 @@
 //Additional Pass
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 
+//Hashing
 #include <string>
+#include <ctime>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
 
 //For Builtin Pass Runner
 #include "./LLVMPath.h"
@@ -24,6 +30,7 @@
 using namespace std;
 using namespace llvm;
 
+static string moduleHash = "";
 
 static cl::OptionCategory optCategory("SWPP Compiler options");
 
@@ -89,12 +96,38 @@ bool excepted(const char *c , vector<string> &list) {
   return false;
 }
 
+static void prepareHash(unique_ptr<Module> &M) {
+  SHA1 Hasher;
+
+  string moduleStr;
+  raw_string_ostream moduleOs(moduleStr);
+  moduleOs << *M;
+  moduleOs.flush();
+  Hasher.update(moduleStr);
+
+  auto timeInfo = std::time(nullptr);
+  auto ltimeInfo = *std::localtime(&timeInfo);
+  std::ostringstream timeOs;
+  timeOs << std::put_time(&ltimeInfo, "%d-%m-%Y %H-%M-%S");
+  auto timeStr = timeOs.str();
+  Hasher.update(timeStr);
+
+  StringRef hashResult = Hasher.result();
+  for (auto &c : hashResult) {
+    int d = ((int) c + 256) % 256;
+    char a = 'A' + (d / 16);
+    char b = 'A' + (d % 16);
+    moduleHash += a;
+    moduleHash += b;
+  }
+}
+
 // Run builtin optimizations using LLVMBIN/opt
 static void runBuiltinOpt(string OptPipeline, unique_ptr<Module> &M) {
   // System call to run builtin passes using `opt`.
   error_code EC;
-  string InLL = ".input.ll";
-  string OutLL = ".outputLL";
+  string InLL = ".input." + moduleHash + ".ll";
+  string OutLL = ".output." + moduleHash + ".ll";
   raw_fd_ostream PrevModuleOut(InLL, EC);
 
   // Print the previous module info
@@ -121,6 +154,8 @@ int main(int argc, char **argv) {
   if (!M)
     return 1;
 
+  prepareHash(M);
+
   LoopAnalysisManager LAM;
   FunctionAnalysisManager FAM;
   CGSCCAnalysisManager CGAM;
@@ -137,18 +172,25 @@ int main(int argc, char **argv) {
   vector<string> exceptList;
   split(exPassList, exceptList);
 
-  if (!excepted("LoopOptimization", exceptList)) {
-    // Loop builtin optimizations
-    string LoopPrePasses = "-loop-simplify -loop-deletion -lcssa -licm -loop-distribute";
-    string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-reduce -loop-simplifycfg -loop-rotate";
-    string LoopMainPasses = "-loop-interchange -loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder -unroll-threshold=100";
-    string LoopEndPasses = "-instcombine -simplifycfg -loop-instsimplify -instcombine -aggressive-instcombine";
+  string BuiltinPre = "-gvn -gvn-hoist -gvn-sink "
+                      "-simplifycfg -tailcallelim -inline";
 
+  runBuiltinOpt(BuiltinPre, M);
+
+  if (!excepted("LoopOptimization", exceptList)) {
+    // Loop builtin optimizations; Added inline
+    string LoopPrePasses = "-loop-deletion -lcssa -loop-distribute";
+    string LoopBasicPasses = "-loop-unswitch -loop-data-prefetch -loop-idiom -loop-load-elim -loop-predication -loop-versioning -loop-simplifycfg";
+    string LoopMainPasses = "-loop-unroll -unroll-runtime -unroll-count=8 -unroll-remainder -unroll-threshold=100 -loop-rotate -loop-interchange";
+    string LoopEndPasses = "-instcombine -loop-instsimplify -instcombine";
+    
     runBuiltinOpt(LoopPrePasses, M);
     runBuiltinOpt(LoopBasicPasses, M);
     runBuiltinOpt(LoopMainPasses, M);
     runBuiltinOpt(LoopEndPasses, M);
   }
+
+ // runBuiltinOpt(BuiltinPost, M);
 
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FunctionPassManager FPM;
@@ -169,8 +211,8 @@ int main(int argc, char **argv) {
     MPM.addPass(CheckConstExpr());
   if (!excepted("MemUseOptimization", exceptList))
     MPM.addPass(MemUseOptimization());
-  if (!excepted("PackRegisters", exceptList))
-    MPM.addPass(PackRegisters());
+/*  if (!excepted("PackRegisters", exceptList))
+    MPM.addPass(PackRegisters());*/
   
   if (!excepted("ReorderMemAccess", exceptList))
     MPM.addPass(ReorderMemAccess());

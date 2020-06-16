@@ -10,7 +10,16 @@ using namespace std;
 using namespace llvm;
 
 AllocType getOpType(const Value *V) {
-  if (auto *CI = dyn_cast<CallInst>(V)) {
+  if (auto *IP = dyn_cast<ConstantExpr>(V)) {
+    if (IP->getOpcode() == Instruction::IntToPtr) {
+      if (auto *Base = dyn_cast<ConstantInt>(IP->getOperand(0))) {
+        uint64_t address = Base->getZExtValue();
+        if (address >= 20480) return HEAP;
+        else return STACK;
+      }
+    }
+    return UNKNOWN;
+  } else if (auto *CI = dyn_cast<CallInst>(V)) {
     if (isMallocCall(CI))
       return HEAP;
     if (isAllocaByteCall(CI)) 

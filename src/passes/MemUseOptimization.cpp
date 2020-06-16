@@ -55,10 +55,11 @@ PreservedAnalyses MemUseOptimization::run(Module &M, ModuleAnalysisManager &MAM)
   LoopInfo LI(FAM.getResult<DominatorTreeAnalysis>(*MainFn));
   for (auto &F : M) {
     if (&F == MainFn) for (auto &BB : F) {
-      if (LI.getLoopFor(&BB)) for (auto &I : BB) {
-        if (isCallInstOfThis(&I, FreeFn)) return PreservedAnalyses::all();
-      }
-      for (auto &I : BB) {
+      if (LI.getLoopFor(&BB)) {
+        for (auto &I : BB) {
+          if (isCallInstOfThis(&I, FreeFn)) return PreservedAnalyses::all();
+        }
+      } else for (auto &I : BB) {
         if (CallInst *CI = dyn_cast<CallInst>(&I)) {
           if (CI->getCalledFunction() == MallocFn) MallocInsts.push_back(CI);
           if (CI->getCalledFunction() == FreeFn) FreeInsts.push_back(CI);

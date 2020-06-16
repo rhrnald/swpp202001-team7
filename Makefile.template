@@ -72,7 +72,7 @@ test: all
 	@test/backend_bugfix_unittests/test.sh $(LLVM_BIN)
 	@printf "\nCase test\n"
 	@printf "======================================================\n"
-	@test/checker.sh test/testcases $(PASSES)
+	@test/checker_only_benchmarks.sh test/testcases $(PASSES)
 
 #clean
 clean:

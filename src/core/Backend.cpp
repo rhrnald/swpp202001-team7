@@ -48,7 +48,7 @@ private:
 
   map<Function *, Function *> FuncMap;
   map<GlobalVariable *, Constant *> GVMap; // Global var to 'inttoptr i'
-  vector<pair<uint64_t, uint64_t>> GVLocs; // (Global var addr, size) info
+  vector<tuple<uint64_t, bool, uint64_t>> GVLocs; // (Global var addr, in heap, size) info
   map<Argument *, Argument *> ArgMap;
   map<BasicBlock *, BasicBlock *> BBMap;
   map<Instruction *, AllocaInst *> RegToAllocaMap;
@@ -215,7 +215,8 @@ public:
     I8PtrTy = PointerType::getInt8PtrTy(*Context);
     ModuleToEmit->setDataLayout(M.getDataLayout());
 
-    uint64_t GVOffset = 20480;
+    uint64_t GVHeapOffset = 20480;
+    uint64_t GVStackOffset = 10240;
     FunctionType *MallocTy = nullptr;
     for (auto &G : M.global_objects()) {
       if (auto *F = dyn_cast<Function>(&G)) {
@@ -249,11 +250,18 @@ public:
                "A global object is neither function nor global variable");
 
         unsigned sz = (getAccessSize(GVSrc->getValueType()) + 7) / 8 * 8;
-        auto *CI = ConstantInt::get(I64Ty, GVOffset);
-        GVMap[GVSrc] = ConstantExpr::getIntToPtr(CI, GVSrc->getType());
-        GVLocs.emplace_back(GVOffset, sz);
 
-        GVOffset += sz;
+        if (GVStackOffset - sz >= STACK_SAFE_REGION) {
+          GVStackOffset -= sz;
+          auto *CI = ConstantInt::get(I64Ty, GVStackOffset);
+          GVMap[GVSrc] = ConstantExpr::getIntToPtr(CI, GVSrc->getType());
+          GVLocs.emplace_back(GVStackOffset, 0, sz);
+        } else {
+          auto *CI = ConstantInt::get(I64Ty, GVHeapOffset);
+          GVMap[GVSrc] = ConstantExpr::getIntToPtr(CI, GVSrc->getType());
+          GVLocs.emplace_back(GVHeapOffset, 1, sz);
+          GVHeapOffset += sz;
+        }
       }
     }
 
@@ -311,12 +319,24 @@ public:
       if (FuncToEmit->getName() == "main") {
         // Let's create a malloc for each global var.
         // This is dummy register.
+        unsigned HeapSize = 0, StackSize = 0;
         string Reg1 = assemblyRegisterName(1);
-        for (auto &[_, Size] : GVLocs) {
+        for (auto &[_, InHeap, Size] : GVLocs) {
+          if (InHeap)
+            HeapSize += Size;
+          else
+            StackSize += Size;
+        }
+        if (StackSize) {
+          auto *SetGVTy = FunctionType::get(Type::getVoidTy(*Context), {I64Ty}, false);
+          auto *SetGVFn = Function::Create(SetGVTy, Function::ExternalLinkage,
+                                      "__set_global_stack_" + to_string(StackSize), *ModuleToEmit);
+        }
+        if (HeapSize) {
           auto *ArgTy =
             dyn_cast<IntegerType>(MallocFn->getFunctionType()->getParamType(0));
           assert(ArgTy);
-          IB.CreateCall(MallocFn, {ConstantInt::get(ArgTy, Size)}, Reg1);
+          IB.CreateCall(MallocFn, {ConstantInt::get(ArgTy, HeapSize)}, Reg1);
         }
       }
     }

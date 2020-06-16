@@ -10,7 +10,7 @@ using namespace std;
 
 
 enum AllocType {
-  STACK, HEAP, UNKNOWN, CALL
+  STACK, HEAP, UNKNOWN, CALL, NOEFFECT
 };
 
 bool isMallocCall(const CallInst *CI) {
@@ -34,9 +34,8 @@ bool isAllocaByteCall(const CallInst *CI) {
 bool isFreeCall(const CallInst *CI) {
   return CI->getCalledFunction()->getName() == "free";
 }
-// A very simple getBlockType().
-// Sees which memory area V is pointing to.
-AllocType getBlockType(const Value *V) {
+
+AllocType getOpTypeReorder(const Value *V) {
   if (auto *CI = dyn_cast<CallInst>(V)) {
     if (isMallocCall(CI))
       return HEAP;
@@ -44,40 +43,58 @@ AllocType getBlockType(const Value *V) {
       return HEAP;
     if (isAllocaByteCall(CI)) 
       return STACK;
-    return CALL;
+    return UNKNOWN;
   } else if (auto *AI = dyn_cast<AllocaInst>(V)) {
     return STACK;
   } else if (auto *BI = dyn_cast<BitCastInst>(V)) {
-    return getBlockType(BI->getOperand(0));
+    return getOpTypeReorder(BI->getOperand(0));
   } else if (auto *GI = dyn_cast<GetElementPtrInst>(V)) {
-    return getBlockType(GI->getPointerOperand());
+    return getOpTypeReorder(GI->getPointerOperand());
+  } else if (auto *BCO = dyn_cast<BitCastOperator>(V)) {
+    return getOpTypeReorder(BCO->getOperand(0));
   } else if (auto *LI = dyn_cast<LoadInst>(V)) {
-    return getBlockType(LI->getPointerOperand());
+    return getOpTypeReorder(LI->getPointerOperand());
   } else if (auto *SI = dyn_cast<StoreInst>(V)) {
-    return getBlockType(SI->getPointerOperand());
+    return getOpTypeReorder(SI->getPointerOperand());
   } else if (auto *GV = dyn_cast<GlobalVariable>(V)) {
     return HEAP;
-  } else if (auto *BCO = dyn_cast<BitCastOperator>(V)) {
-    return getBlockType(BCO->getOperand(0));
+  } else if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+    AllocType op1 = getOpTypeReorder(BO->getOperand(0));
+    if(op1!=UNKNOWN) return op1;
+    return getOpTypeReorder(BO->getOperand(1));
   }
   return UNKNOWN;
+}
+AllocType getAccessTypeReorder(const Value *V) {
+  if (auto *CI = dyn_cast<CallInst>(V)) {
+    if (isMallocCall(CI))
+      return NOEFFECT;
+    if (isFreeCall(CI))
+      return NOEFFECT;
+    if (isAllocaByteCall(CI)) 
+      return NOEFFECT;
+    return CALL;
+  } else if (auto *LI = dyn_cast<LoadInst>(V)) {
+    return getOpTypeReorder(LI->getPointerOperand());
+  } else if (auto *SI = dyn_cast<StoreInst>(V)) {
+    return getOpTypeReorder(SI->getPointerOperand());
+  }
+  return NOEFFECT;
 }
 
 //check if instruction I must be infront of instruction J
 bool checkDom(Instruction* I, Instruction* J) {
-  int Itype=getBlockType(I);
-  int Jtype=getBlockType(J);
-  if(Itype==CALL || Jtype==CALL) return true;
-  if(Itype==Jtype && (Itype!=UNKNOWN)) return true;
-
-  /*for(auto ptr : J->getOperandList()) {
-    if(ptr==I) return true;
-  }
-  return false;*/
-  
   int num=J->getNumOperands();
   for(int i=0; i<num; i++)
     if(J->getOperand(i) == I) return true;
+
+  int Itype=getAccessTypeReorder(I);
+  int Jtype=getAccessTypeReorder(J);
+  if(Itype==NOEFFECT || Jtype==NOEFFECT) return false;
+  if(Itype==CALL || Jtype==CALL) return true;
+  if(Itype!=NOEFFECT && Itype==Jtype && (Itype!=UNKNOWN)) return true;
+  if(Itype!=NOEFFECT && Jtype==UNKNOWN) return true;
+  
   return false;
 }
 
@@ -97,7 +114,7 @@ PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
     dom.resize(n), type.resize(n), cnt.resize(n), used.resize(n);
 
     for(int i=0; i<n; i++) {
-      type[i]=getBlockType(Insts[i]);
+      type[i]=getOpTypeReorder(Insts[i]);
       used[i]=0;
     }
     
@@ -135,7 +152,10 @@ PreservedAnalyses ReorderMemAccess::run(Module &M, ModuleAnalysisManager &MAM) {
       }
 
       //Change blocking.
-      block=STACK+HEAP-block;
+      //block=STACK+HEAP-block;
+      if (block==HEAP) block=STACK;
+      else if (block==STACK) block=UNKNOWN;
+      else block=HEAP;
     }
 
     //clear Block

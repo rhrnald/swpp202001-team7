@@ -214,8 +214,8 @@ int main(int argc, char **argv) {
 /*  if (!excepted("PackRegisters", exceptList))
     MPM.addPass(PackRegisters());*/
   
-/*  if (!excepted("ReorderMemAccess", exceptList))
-    MPM.addPass(ReorderMemAccess());*/
+  if (!excepted("ReorderMemAccess", exceptList))
+    MPM.addPass(ReorderMemAccess());
     
   if (!excepted("WeirdArithmetic", exceptList))
     MPM.addPass(WeirdArithmetic());

@@ -32,22 +32,24 @@ Our test code will compare the outputs and costs between the optimized compiler 
   ```bash
   ./configure.sh <LLVM-BIN> <THREADS NUM(default is 8 if omitted)>
   make #or make all
-```
+  ```
+
   `./configure.sh` is to generate a proper `Makefile` inside the repository. The `<THREADS NUM>` is used for the concurrent case test.
   
-  ```make``` command will automatically build 3 executable programs inside ```bin``` directory: sf-compiler-team7, interpret, sf-compiler-test-team7, sf-compiler-vanilla.
+  `make` command will automatically build 3 executable programs inside `bin` directory: sf-compiler-team7, interpret, sf-compiler-test-team7, sf-compiler-vanilla.
   
 * Test
   ```bash
   make test
   ```
-  ```make test``` command will check if the compiler runs with no error with given test cases. It will also compare performance with the `nopass` option compiler.
+  
+  The code `make test` command will check if the compiler runs with no error with given test cases. It will also compare performance with the `nopass` option compiler.
   
   If you want to compare the results between `[ALL PASSES] - [SOME PASSES]` and `[ALL PASSES]`, then you can use:
   
-  ```bash
+    ```bash
   make test PASSES="WeirdArith,PackRegister"
-  ```
+    ```
 
 
 
@@ -108,6 +110,6 @@ Our test code will compare the outputs and costs between the optimized compiler 
 
 ## Optimization Benchmarks
 
-![alt text](documents/resources/plot_sp3_vanilla.png "Plotting Result")
+![alt text](documents/resources/plot_final.png "Plotting Result")
 
 <center>Plotting Result of SP3 vs Vanilla Compiler, y-axis is [SP3 cost] / [Vanilla Cost], Low value is better</center>
